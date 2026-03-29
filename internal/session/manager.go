@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anthropic/wechat-acp-go/internal/agent"
@@ -23,7 +24,7 @@ type UserSession struct {
 	Key          string
 	Backend      agent.Backend
 	MsgCh        chan PendingMessage
-	LastActivity int64 // unix millis
+	lastActivity atomic.Int64 // unix millis
 	CreatedAt    time.Time
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -115,7 +116,7 @@ func (m *Manager) Enqueue(sessionKey string, msg PendingMessage) error {
 			return fmt.Errorf("create session %s: %w", sessionKey, err)
 		}
 	}
-	sess.LastActivity = time.Now().UnixMilli()
+	sess.lastActivity.Store(time.Now().UnixMilli())
 	m.mu.Unlock()
 
 	select {
@@ -136,14 +137,14 @@ func (m *Manager) createSessionLocked(key string) (*UserSession, error) {
 	}
 
 	sess := &UserSession{
-		Key:          key,
-		Backend:      backend,
-		MsgCh:        make(chan PendingMessage, 32),
-		LastActivity: time.Now().UnixMilli(),
-		CreatedAt:    time.Now(),
-		ctx:          sessCtx,
-		cancel:       sessCancel,
+		Key:       key,
+		Backend:   backend,
+		MsgCh:     make(chan PendingMessage, 32),
+		CreatedAt: time.Now(),
+		ctx:       sessCtx,
+		cancel:    sessCancel,
 	}
+	sess.lastActivity.Store(time.Now().UnixMilli())
 
 	m.sessions[key] = sess
 	go m.consumeLoop(sess)
@@ -216,7 +217,7 @@ func (m *Manager) processMessage(sess *UserSession, msg PendingMessage) {
 		m.opts.OnReply(sess.Key, msg.ContextToken, replyText)
 	}
 
-	sess.LastActivity = time.Now().UnixMilli()
+	sess.lastActivity.Store(time.Now().UnixMilli())
 
 	// Persist
 	if m.opts.Store != nil {
@@ -252,7 +253,7 @@ func (m *Manager) cleanupIdleSessions() {
 	defer m.mu.Unlock()
 
 	for key, sess := range m.sessions {
-		idle := now - sess.LastActivity
+		idle := now - sess.lastActivity.Load()
 		if idle > threshold && len(sess.MsgCh) == 0 {
 			m.opts.Logger.Info("session_idle_cleanup", "key", key)
 			sess.cancel()
@@ -272,8 +273,8 @@ func (m *Manager) evictOldestLocked() {
 	var oldestKey string
 	var oldestActivity int64 = math.MaxInt64
 	for key, sess := range m.sessions {
-		if len(sess.MsgCh) == 0 && sess.LastActivity < oldestActivity {
-			oldestActivity = sess.LastActivity
+		if len(sess.MsgCh) == 0 && sess.lastActivity.Load() < oldestActivity {
+			oldestActivity = sess.lastActivity.Load()
 			oldestKey = key
 		}
 	}
