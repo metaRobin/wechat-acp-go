@@ -1,0 +1,64 @@
+# wechat-acp-go configuration
+
+[global]
+# Data directory for tokens, sessions, logs
+storage_dir = "~/.wechat-acp-go"
+# Log level: debug, info, warn, error
+log_level = "info"
+
+# ─────────────────────────────────────────
+# Bot instances (define one or more)
+# ─────────────────────────────────────────
+
+[[bot]]
+# Unique instance name
+name = "coding-bot"
+# Built-in preset or custom command (see: wechat-acp-go agents)
+agent = "claude"
+
+[bot.wechat]
+# Usually no need to change these
+# base_url = "https://ilinkai.weixin.qq.com"
+# cdn_base_url = "https://novac2c.cdn.weixin.qq.com/c2c"
+
+[bot.agent_config]
+# Override agent command (leave empty to use preset)
+# command = "npx"
+# args = ["tsx", "./my-agent.ts"]
+# Working directory for the agent process
+cwd = "."
+# Extra environment variables
+# env = { ANTHROPIC_API_KEY = "sk-..." }
+# Forward agent thinking to WeChat
+show_thoughts = false
+
+[bot.session]
+# Session idle timeout (Go duration: 1h, 30m, 24h)
+idle_timeout = "24h"
+# Maximum concurrent user sessions
+max_concurrent = 10
+
+[bot.group]
+# Enable group chat support
+enabled = true
+# Trigger mode: "@bot", "keyword:ask", "all"
+trigger = "@bot"
+# Session mode: "per_group" (one session per group)
+session_mode = "per_group"
+
+[bot.daemon]
+# Run in background after login
+enabled = false
+# pid_file = "~/.wechat-acp-go/coding-bot.pid"
+# log_file = "~/.wechat-acp-go/coding-bot.log"
+
+# ─────────────────────────────────────────
+# Custom agent presets (extend built-in ones)
+# ─────────────────────────────────────────
+
+# [agents.my-agent]
+# label = "My Custom Agent"
+# description = "A custom ACP agent"
+# command = "npx"
+# args = ["tsx", "./agent.ts"]
+# env = { DEBUG = "1" }
