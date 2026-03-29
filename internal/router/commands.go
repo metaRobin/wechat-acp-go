@@ -14,6 +14,7 @@ var knownCommands = map[string]bool{
 	"agents": true,
 	"status": true,
 	"clear":  true,
+	"cancel": true,
 }
 
 // ParseCommand checks if text is a known command.

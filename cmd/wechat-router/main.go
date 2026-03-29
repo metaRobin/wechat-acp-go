@@ -31,6 +31,8 @@ func main() {
 		flagMaxSessions int
 		flagShowThoughts bool
 		flagVerbose     bool
+		flagWeb         bool
+		flagWebAddr     string
 	)
 
 	rootCmd := &cobra.Command{
@@ -48,6 +50,8 @@ func main() {
 				maxSessions:  flagMaxSessions,
 				showThoughts: flagShowThoughts,
 				verbose:      flagVerbose,
+				web:          flagWeb,
+				webAddr:      flagWebAddr,
 			})
 		},
 	}
@@ -61,6 +65,8 @@ func main() {
 	rootCmd.Flags().IntVar(&flagMaxSessions, "max-sessions", 0, "Max concurrent user sessions")
 	rootCmd.Flags().BoolVar(&flagShowThoughts, "show-thoughts", false, "Forward agent thinking to WeChat")
 	rootCmd.Flags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose logging")
+	rootCmd.Flags().BoolVar(&flagWeb, "web", false, "Enable web management UI")
+	rootCmd.Flags().StringVar(&flagWebAddr, "web-addr", "", "Web UI listen address (default: 127.0.0.1:8970)")
 
 	rootCmd.AddCommand(agentsCmd())
 	rootCmd.AddCommand(stopCmd())
@@ -84,6 +90,8 @@ type startOpts struct {
 	maxSessions  int
 	showThoughts bool
 	verbose      bool
+	web          bool
+	webAddr      string
 }
 
 func runStart(ctx context.Context, opts startOpts) error {
@@ -119,6 +127,12 @@ func runStart(ctx context.Context, opts startOpts) error {
 		}
 		if opts.daemon {
 			b.Daemon.Enabled = true
+		}
+		if opts.web {
+			b.Web.Enabled = true
+		}
+		if opts.webAddr != "" {
+			b.Web.Addr = opts.webAddr
 		}
 	}
 

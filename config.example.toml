@@ -39,6 +39,10 @@ idle_timeout = "24h"
 max_concurrent = 10
 # Max messages to restore as context on session resume (0 = disable)
 history_limit = 20
+# Max pending messages per session queue (default: 3; excess is rejected with a notice)
+# queue_size = 3
+# Max time a message waits in queue before being discarded (default: 2m)
+# queue_timeout = "2m"
 
 [bot.group]
 # Enable group chat support
@@ -53,6 +57,12 @@ session_mode = "per_group"
 enabled = false
 # pid_file = "~/.wechat-router-go/coding-bot.pid"
 # log_file = "~/.wechat-router-go/coding-bot.log"
+
+[bot.web]
+# Enable the built-in web management UI (default: disabled)
+# Access at http://127.0.0.1:8080 to view sessions and message history
+enabled = false
+# addr = "127.0.0.1:8970"
 
 # ─────────────────────────────────────────
 # Custom agent presets (extend built-in ones)

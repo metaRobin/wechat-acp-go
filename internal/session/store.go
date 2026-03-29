@@ -175,6 +175,30 @@ func (s *Store) ListActiveSessions() ([]StoredSession, error) {
 	return sessions, rows.Err()
 }
 
+// ListAllSessions returns all sessions ordered by last_activity descending, up to limit.
+func (s *Store) ListAllSessions(limit int) ([]StoredSession, error) {
+	rows, err := s.db.Query(
+		"SELECT key, state, agent_id, last_activity, created_at FROM sessions ORDER BY last_activity DESC LIMIT ?",
+		limit)
+	if err != nil {
+		return nil, fmt.Errorf("list all sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []StoredSession
+	for rows.Next() {
+		var sess StoredSession
+		var lastActivity, createdAt int64
+		if err := rows.Scan(&sess.Key, &sess.State, &sess.AgentID, &lastActivity, &createdAt); err != nil {
+			return nil, err
+		}
+		sess.LastActivity = time.UnixMilli(lastActivity)
+		sess.CreatedAt = time.UnixMilli(createdAt)
+		sessions = append(sessions, sess)
+	}
+	return sessions, rows.Err()
+}
+
 // AppendMessage stores a message in the session history.
 func (s *Store) AppendMessage(sessionKey, role, content string) error {
 	now := time.Now().UnixMilli()

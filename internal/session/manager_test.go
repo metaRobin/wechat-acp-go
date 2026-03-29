@@ -85,7 +85,7 @@ func TestIntegration_EnqueueAndReply(t *testing.T) {
 	mgr.Start()
 	defer mgr.Stop()
 
-	err := mgr.Enqueue("u:user1", PendingMessage{
+	_, err := mgr.Enqueue("u:user1", PendingMessage{
 		Text:         "hello",
 		ContextToken: "user1",
 	}, "test")
@@ -135,7 +135,7 @@ func TestIntegration_MultipleMessages(t *testing.T) {
 	defer mgr.Stop()
 
 	for _, msg := range []string{"msg1", "msg2", "msg3"} {
-		if err := mgr.Enqueue("u:user1", PendingMessage{Text: msg, ContextToken: "user1"}, "test"); err != nil {
+		if _, err := mgr.Enqueue("u:user1", PendingMessage{Text: msg, ContextToken: "user1"}, "test"); err != nil {
 			t.Fatalf("Enqueue %s failed: %v", msg, err)
 		}
 	}
@@ -184,8 +184,8 @@ func TestIntegration_MultipleSessions(t *testing.T) {
 	mgr.Start()
 	defer mgr.Stop()
 
-	_ = mgr.Enqueue("u:alice", PendingMessage{Text: "hi from alice", ContextToken: "alice"}, "test")
-	_ = mgr.Enqueue("u:bob", PendingMessage{Text: "hi from bob", ContextToken: "bob"}, "test")
+	_, _ = mgr.Enqueue("u:alice", PendingMessage{Text: "hi from alice", ContextToken: "alice"}, "test")
+	_, _ = mgr.Enqueue("u:bob", PendingMessage{Text: "hi from bob", ContextToken: "bob"}, "test")
 
 	time.Sleep(500 * time.Millisecond)
 
@@ -229,7 +229,7 @@ func TestIntegration_WithStore(t *testing.T) {
 	mgr.Start()
 	defer mgr.Stop()
 
-	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "persist me", ContextToken: "user1"}, "test")
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "persist me", ContextToken: "user1"}, "test")
 	time.Sleep(300 * time.Millisecond)
 
 	if !replied.Load() {
@@ -293,7 +293,7 @@ func TestIntegration_SwitchAgent(t *testing.T) {
 	defer mgr.Stop()
 
 	// Use agent A
-	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "hi", ContextToken: "user1"}, "agentA")
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "hi", ContextToken: "user1"}, "agentA")
 	time.Sleep(200 * time.Millisecond)
 
 	if mgr.GetSessionAgentID("u:user1") != "agentA" {
@@ -309,7 +309,7 @@ func TestIntegration_SwitchAgent(t *testing.T) {
 		t.Errorf("agent after switch = %q, want agentB", mgr.GetSessionAgentID("u:user1"))
 	}
 
-	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "hi again", ContextToken: "user1"}, "agentB")
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "hi again", ContextToken: "user1"}, "agentB")
 	time.Sleep(200 * time.Millisecond)
 
 	repliesMu.Lock()
@@ -349,11 +349,11 @@ func TestIntegration_MaxConcurrentEviction(t *testing.T) {
 	mgr.Start()
 	defer mgr.Stop()
 
-	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "a", ContextToken: "u1"}, "test")
-	_ = mgr.Enqueue("u:user2", PendingMessage{Text: "b", ContextToken: "u2"}, "test")
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "a", ContextToken: "u1"}, "test")
+	_, _ = mgr.Enqueue("u:user2", PendingMessage{Text: "b", ContextToken: "u2"}, "test")
 	time.Sleep(200 * time.Millisecond)
 
-	_ = mgr.Enqueue("u:user3", PendingMessage{Text: "c", ContextToken: "u3"}, "test")
+	_, _ = mgr.Enqueue("u:user3", PendingMessage{Text: "c", ContextToken: "u3"}, "test")
 	time.Sleep(200 * time.Millisecond)
 
 	repliesMu.Lock()
@@ -379,7 +379,7 @@ func TestIntegration_NoAgentSelected(t *testing.T) {
 	mgr.Start()
 	defer mgr.Stop()
 
-	err := mgr.Enqueue("u:user1", PendingMessage{Text: "hello", ContextToken: "user1"}, "")
+	_, err := mgr.Enqueue("u:user1", PendingMessage{Text: "hello", ContextToken: "user1"}, "")
 	if err == nil {
 		t.Fatal("expected error for empty agent ID, got nil")
 	}
@@ -472,7 +472,7 @@ func TestIntegration_HistoryInjection(t *testing.T) {
 	defer mgr.Stop()
 
 	// First message should inject history
-	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "new question", ContextToken: "user1"}, "test")
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "new question", ContextToken: "user1"}, "test")
 	time.Sleep(300 * time.Millisecond)
 
 	prompts := mock.getPrompts()
@@ -487,7 +487,7 @@ func TestIntegration_HistoryInjection(t *testing.T) {
 	}
 
 	// Second message should NOT inject history
-	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "follow up", ContextToken: "user1"}, "test")
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "follow up", ContextToken: "user1"}, "test")
 	time.Sleep(300 * time.Millisecond)
 
 	prompts = mock.getPrompts()
@@ -555,7 +555,7 @@ func TestIntegration_ClearCommand(t *testing.T) {
 	defer mgr.Stop()
 
 	// Create a session with messages
-	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "hello", ContextToken: "user1"}, "test")
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "hello", ContextToken: "user1"}, "test")
 	time.Sleep(200 * time.Millisecond)
 
 	// Verify messages exist
@@ -576,5 +576,144 @@ func TestIntegration_ClearCommand(t *testing.T) {
 	// Verify session removed
 	if mgr.HasSession("u:user1") {
 		t.Error("session should be removed after clear")
+	}
+}
+
+func TestEnqueue_QueueFull_ReturnsMsg(t *testing.T) {
+	// Use a slow backend so the queue fills up
+	mock := &mockBackend{delay: 500 * time.Millisecond}
+
+	var repliesMu sync.Mutex
+	var replies []string
+
+	mgr := NewManager(ManagerOpts{
+		Registry:      mockRegistry(mock),
+		DefaultAgent:  "test",
+		QueueSize:     1, // small queue to trigger rejection
+		IdleTimeout:   time.Hour,
+		MaxConcurrent: 5,
+		OnReply: func(_, _, text string) {
+			repliesMu.Lock()
+			replies = append(replies, text)
+			repliesMu.Unlock()
+		},
+		Logger: slog.Default(),
+	})
+	mgr.Start()
+	defer mgr.Stop()
+
+	// First message — accepted, starts processing (slow backend)
+	busyMsg, err := mgr.Enqueue("u:user1", PendingMessage{Text: "msg1", ContextToken: "user1"}, "test")
+	if err != nil {
+		t.Fatalf("Enqueue msg1 error: %v", err)
+	}
+	if busyMsg != "" {
+		t.Errorf("msg1 should be accepted, got busy: %q", busyMsg)
+	}
+
+	// Second message — fills the queue (QueueSize=1 means 1 waiting, 1 being processed)
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "msg2", ContextToken: "user1"}, "test")
+
+	// Third message — queue is now full, should be rejected
+	busyMsg, err = mgr.Enqueue("u:user1", PendingMessage{Text: "msg3", ContextToken: "user1"}, "test")
+	if err != nil {
+		t.Fatalf("Enqueue msg3 error: %v", err)
+	}
+	if busyMsg == "" {
+		t.Error("expected busy message when queue is full, got empty string")
+	}
+	if busyMsg != "⏳ 正在处理中，请稍后再试" {
+		t.Errorf("busy message = %q, want '⏳ 正在处理中，请稍后再试'", busyMsg)
+	}
+}
+
+func TestEnqueue_MessageTimeout(t *testing.T) {
+	// Slow backend so messages sit in queue long enough to time out
+	mock := &mockBackend{delay: 200 * time.Millisecond}
+
+	var repliesMu sync.Mutex
+	var replies []string
+
+	mgr := NewManager(ManagerOpts{
+		Registry:      mockRegistry(mock),
+		DefaultAgent:  "test",
+		QueueSize:     5,
+		QueueTimeout:  10 * time.Millisecond, // very short timeout
+		IdleTimeout:   time.Hour,
+		MaxConcurrent: 5,
+		OnReply: func(_, _, text string) {
+			repliesMu.Lock()
+			replies = append(replies, text)
+			repliesMu.Unlock()
+		},
+		Logger: slog.Default(),
+	})
+	mgr.Start()
+	defer mgr.Stop()
+
+	// First message starts processing immediately (no timeout issue)
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "msg1", ContextToken: "user1"}, "test")
+
+	// Wait for the backend to start processing msg1, then enqueue msg2
+	// msg2 will sit in queue while msg1 takes 200ms — exceeding 10ms timeout
+	time.Sleep(20 * time.Millisecond)
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "msg2", ContextToken: "user1"}, "test")
+
+	// Wait for all processing to finish
+	time.Sleep(500 * time.Millisecond)
+
+	repliesMu.Lock()
+	defer repliesMu.Unlock()
+
+	hasTimeout := false
+	for _, r := range replies {
+		if r == "⏰ 请求超时，请重新发送" {
+			hasTimeout = true
+		}
+	}
+	if !hasTimeout {
+		t.Errorf("expected timeout reply, got replies: %v", replies)
+	}
+}
+
+func TestCancelSession_Active(t *testing.T) {
+	mock := &mockBackend{delay: 500 * time.Millisecond}
+
+	mgr := NewManager(ManagerOpts{
+		Registry:      mockRegistry(mock),
+		DefaultAgent:  "test",
+		IdleTimeout:   time.Hour,
+		MaxConcurrent: 5,
+		OnReply:       func(_, _, _ string) {},
+		Logger:        slog.Default(),
+	})
+	mgr.Start()
+	defer mgr.Stop()
+
+	_, _ = mgr.Enqueue("u:user1", PendingMessage{Text: "hello", ContextToken: "user1"}, "test")
+	time.Sleep(50 * time.Millisecond) // let session start
+
+	msg := mgr.CancelSession("u:user1")
+	if msg != "🛑 已取消当前请求" {
+		t.Errorf("CancelSession msg = %q, want '🛑 已取消当前请求'", msg)
+	}
+	if mgr.HasSession("u:user1") {
+		t.Error("session should be removed after cancel")
+	}
+}
+
+func TestCancelSession_NoSession(t *testing.T) {
+	mgr := NewManager(ManagerOpts{
+		Registry:      mockRegistry(&mockBackend{}),
+		IdleTimeout:   time.Hour,
+		MaxConcurrent: 5,
+		Logger:        slog.Default(),
+	})
+	mgr.Start()
+	defer mgr.Stop()
+
+	msg := mgr.CancelSession("u:nobody")
+	if msg != "没有正在执行的请求" {
+		t.Errorf("CancelSession msg = %q, want '没有正在执行的请求'", msg)
 	}
 }

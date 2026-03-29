@@ -167,6 +167,19 @@ func TestStripAtBotSpecialWhitespace(t *testing.T) {
 	}
 }
 
+func TestParseCommandCancel(t *testing.T) {
+	cmd := ParseCommand("/cancel")
+	if cmd == nil {
+		t.Fatal("expected ParseCommand('/cancel') to return non-nil")
+	}
+	if cmd.Name != "cancel" {
+		t.Errorf("cmd.Name = %q, want 'cancel'", cmd.Name)
+	}
+	if cmd.Arg != "" {
+		t.Errorf("cmd.Arg = %q, want empty", cmd.Arg)
+	}
+}
+
 func TestSessionKeyPrivateMessage(t *testing.T) {
 	// sessionKey is unexported, but we can test it indirectly.
 	// The method just returns "u:" + msg.UserID for private messages.

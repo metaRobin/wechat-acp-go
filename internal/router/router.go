@@ -71,12 +71,14 @@ func (r *Router) Route(msg *wechatbot.IncomingMessage) {
 	// Build prompt text with media info if present
 	promptText := r.buildPromptText(msg, sessionKey)
 
-	err := r.mgr.Enqueue(sessionKey, session.PendingMessage{
+	busyMsg, err := r.mgr.Enqueue(sessionKey, session.PendingMessage{
 		Text:         promptText,
 		ContextToken: replyTarget,
 	}, agentID)
 	if err != nil {
 		r.logger.Error("enqueue_failed", "key", sessionKey, "error", err)
+	} else if busyMsg != "" {
+		r.sendReply(replyTarget, busyMsg)
 	}
 }
 
@@ -140,6 +142,8 @@ func (r *Router) handleCommand(cmd *Command, sessionKey, replyTarget string) {
 		r.handleStatus(sessionKey, replyTarget)
 	case "clear":
 		r.handleClear(sessionKey, replyTarget)
+	case "cancel":
+		r.sendReply(replyTarget, r.mgr.CancelSession(sessionKey))
 	}
 }
 

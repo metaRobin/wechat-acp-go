@@ -29,6 +29,7 @@ type BotConfig struct {
 	Session  SessionConfig `toml:"session"`
 	Group    GroupConfig   `toml:"group"`
 	Daemon   DaemonConfig  `toml:"daemon"`
+	Web      WebConfig     `toml:"web"`
 }
 
 type WeChatConfig struct {
@@ -48,6 +49,8 @@ type SessionConfig struct {
 	IdleTimeout    Duration `toml:"idle_timeout"`
 	MaxConcurrent  int      `toml:"max_concurrent"`
 	HistoryLimit   int      `toml:"history_limit"`
+	QueueSize      int      `toml:"queue_size"`
+	QueueTimeout   Duration `toml:"queue_timeout"`
 }
 
 type GroupConfig struct {
@@ -60,6 +63,11 @@ type DaemonConfig struct {
 	Enabled bool   `toml:"enabled"`
 	PidFile string `toml:"pid_file"`
 	LogFile string `toml:"log_file"`
+}
+
+type WebConfig struct {
+	Enabled bool   `toml:"enabled"`
+	Addr    string `toml:"addr"`
 }
 
 // Duration wraps time.Duration for TOML string parsing ("24h", "30m").
@@ -107,6 +115,9 @@ func DefaultBotConfig(name, agent string) BotConfig {
 			Trigger:     "@bot",
 			SessionMode: "per_group",
 		},
+		Web: WebConfig{
+			Addr: "127.0.0.1:8970",
+		},
 	}
 }
 
@@ -147,6 +158,12 @@ func applyDefaults(cfg *Config) {
 		if b.Session.HistoryLimit == 0 {
 			b.Session.HistoryLimit = 20
 		}
+		if b.Session.QueueSize == 0 {
+			b.Session.QueueSize = 3
+		}
+		if b.Session.QueueTimeout.Duration == 0 {
+			b.Session.QueueTimeout.Duration = 2 * time.Minute
+		}
 		if b.Group.Trigger == "" {
 			b.Group.Trigger = "@bot"
 		}
@@ -161,6 +178,9 @@ func applyDefaults(cfg *Config) {
 		}
 		b.Daemon.PidFile = expandHome(b.Daemon.PidFile)
 		b.Daemon.LogFile = expandHome(b.Daemon.LogFile)
+		if b.Web.Addr == "" {
+			b.Web.Addr = "127.0.0.1:8970"
+		}
 	}
 }
 

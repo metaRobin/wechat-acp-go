@@ -14,6 +14,7 @@ import (
 	"github.com/metaRobin/wechat-router-go/internal/config"
 	"github.com/metaRobin/wechat-router-go/internal/router"
 	"github.com/metaRobin/wechat-router-go/internal/session"
+	"github.com/metaRobin/wechat-router-go/internal/web"
 )
 
 // Bridge connects a WeChat bot to AI agent sessions.
@@ -26,6 +27,7 @@ type Bridge struct {
 	logger       *slog.Logger
 	mgr          *session.Manager
 	bot          *wechatbot.Bot
+	webServer    *web.Server
 }
 
 // New creates a Bridge for a single bot configuration.
@@ -93,12 +95,21 @@ func (b *Bridge) Run(ctx context.Context, forceLogin bool) error {
 		MediaDir:        filepath.Join(b.storageDir, "media"),
 		IdleTimeout:     b.cfg.Session.IdleTimeout.Duration,
 		MaxConcurrent:   b.cfg.Session.MaxConcurrent,
+		QueueSize:       b.cfg.Session.QueueSize,
+		QueueTimeout:    b.cfg.Session.QueueTimeout.Duration,
 		OnReply:         b.sendReply,
 		SendTyping:      b.sendTyping,
 		Store:           store,
 		Logger:          b.logger,
 	})
 	b.mgr.Start()
+
+	// Start web management server if enabled
+	if b.cfg.Web.Enabled {
+		b.webServer = web.New(b.mgr, store, b.cfg.Web.Addr, b.logger)
+		b.webServer.Start(ctx)
+		b.logger.Info("web_server_enabled", "addr", b.cfg.Web.Addr)
+	}
 
 	mediaDir := filepath.Join(b.storageDir, "media")
 	r := router.NewRouter(b.cfg.Name, b.cfg.Group, b.mgr, b.bot, b.customAgents, mediaDir, b.logger)
@@ -188,6 +199,9 @@ func (b *Bridge) Stop() {
 	}
 	if b.mgr != nil {
 		b.mgr.Stop()
+	}
+	if b.webServer != nil {
+		b.webServer.Stop()
 	}
 }
 
