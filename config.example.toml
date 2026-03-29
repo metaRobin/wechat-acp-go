@@ -37,6 +37,8 @@ show_thoughts = false
 idle_timeout = "24h"
 # Maximum concurrent user sessions
 max_concurrent = 10
+# Max messages to restore as context on session resume (0 = disable)
+history_limit = 20
 
 [bot.group]
 # Enable group chat support

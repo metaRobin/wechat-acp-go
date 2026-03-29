@@ -13,6 +13,7 @@ var knownCommands = map[string]bool{
 	"use":    true,
 	"agents": true,
 	"status": true,
+	"clear":  true,
 }
 
 // ParseCommand checks if text is a known command.

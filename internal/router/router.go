@@ -85,6 +85,8 @@ func (r *Router) handleCommand(cmd *Command, sessionKey, replyTarget string) {
 		r.sendReply(replyTarget, config.FormatAgentList(r.customAgents))
 	case "status":
 		r.handleStatus(sessionKey, replyTarget)
+	case "clear":
+		r.handleClear(sessionKey, replyTarget)
 	}
 }
 
@@ -131,6 +133,15 @@ func (r *Router) handleStatus(sessionKey, replyTarget string) {
 		label = p.Label
 	}
 	r.sendReply(replyTarget, fmt.Sprintf("当前 Agent: %s (%s)", label, agentID))
+}
+
+func (r *Router) handleClear(sessionKey, replyTarget string) {
+	if !r.mgr.HasSession(sessionKey) {
+		r.sendReply(replyTarget, "当前没有活跃的会话")
+		return
+	}
+	r.mgr.RemoveSession(sessionKey)
+	r.sendReply(replyTarget, "会话已清除，对话历史已删除")
 }
 
 func (r *Router) restoreAgentFromStore(sessionKey string) string {

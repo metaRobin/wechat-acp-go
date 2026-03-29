@@ -21,14 +21,15 @@ type PendingMessage struct {
 
 // UserSession represents a single active session.
 type UserSession struct {
-	Key          string
-	AgentID      string
-	Backend      agent.Backend
-	MsgCh        chan PendingMessage
-	lastActivity atomic.Int64 // unix millis
-	CreatedAt    time.Time
-	ctx          context.Context
-	cancel       context.CancelFunc
+	Key              string
+	AgentID          string
+	Backend          agent.Backend
+	MsgCh            chan PendingMessage
+	lastActivity     atomic.Int64 // unix millis
+	historyInjected  bool
+	CreatedAt        time.Time
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
 // BackendFactory creates a Backend for a new session.
@@ -41,6 +42,7 @@ type BackendRegistry map[string]BackendFactory
 type ManagerOpts struct {
 	Registry      BackendRegistry
 	DefaultAgent  string // optional: auto-use this agent if set
+	HistoryLimit  int    // max messages to restore (default 20)
 	IdleTimeout   time.Duration
 	MaxConcurrent int
 
@@ -250,7 +252,17 @@ func (m *Manager) processMessage(sess *UserSession, msg PendingMessage) {
 		m.opts.SendTyping(sess.Key, msg.ContextToken)
 	}
 
-	result, err := sess.Backend.Prompt(sess.ctx, msg.Text, func(chunk string) {
+	// Inject history on first message of a restored session
+	promptText := msg.Text
+	if !sess.historyInjected {
+		sess.historyInjected = true
+		if history := m.formatHistory(sess.Key); history != "" {
+			promptText = history + "\n\n" + promptText
+			m.opts.Logger.Debug("history_injected", "key", sess.Key)
+		}
+	}
+
+	result, err := sess.Backend.Prompt(sess.ctx, promptText, func(chunk string) {
 		if m.opts.SendTyping != nil {
 			m.opts.SendTyping(sess.Key, msg.ContextToken)
 		}
@@ -346,5 +358,49 @@ func (m *Manager) evictOldestLocked() {
 			sess.Backend.Kill()
 		}
 		delete(m.sessions, oldestKey)
+	}
+}
+
+// formatHistory loads recent messages from store and formats them as context.
+func (m *Manager) formatHistory(sessionKey string) string {
+	if m.opts.Store == nil {
+		return ""
+	}
+	limit := m.opts.HistoryLimit
+	if limit <= 0 {
+		limit = 20
+	}
+	msgs, err := m.opts.Store.LoadRecentMessages(sessionKey, limit)
+	if err != nil || len(msgs) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("[以下是之前的对话历史]\n")
+	for _, msg := range msgs {
+		role := "User"
+		if msg.Role == "assistant" {
+			role = "Assistant"
+		}
+		sb.WriteString(role + ": " + msg.Content + "\n")
+	}
+	sb.WriteString("[对话历史结束]")
+	return sb.String()
+}
+
+// RemoveSession kills the backend, removes the session, and deletes its messages from store.
+func (m *Manager) RemoveSession(sessionKey string) {
+	m.mu.Lock()
+	if sess, ok := m.sessions[sessionKey]; ok {
+		sess.cancel()
+		if sess.Backend != nil {
+			sess.Backend.Kill()
+		}
+		delete(m.sessions, sessionKey)
+	}
+	m.mu.Unlock()
+
+	if m.opts.Store != nil {
+		_ = m.opts.Store.DeleteMessages(sessionKey)
 	}
 }

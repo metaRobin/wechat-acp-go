@@ -47,6 +47,7 @@ type AgentCfg struct {
 type SessionConfig struct {
 	IdleTimeout    Duration `toml:"idle_timeout"`
 	MaxConcurrent  int      `toml:"max_concurrent"`
+	HistoryLimit   int      `toml:"history_limit"`
 }
 
 type GroupConfig struct {
@@ -99,6 +100,7 @@ func DefaultBotConfig(name, agent string) BotConfig {
 		Session: SessionConfig{
 			IdleTimeout:   Duration{24 * time.Hour},
 			MaxConcurrent: 10,
+			HistoryLimit:  20,
 		},
 		Group: GroupConfig{
 			Enabled:     true,
@@ -141,6 +143,9 @@ func applyDefaults(cfg *Config) {
 		}
 		if b.Session.MaxConcurrent == 0 {
 			b.Session.MaxConcurrent = 10
+		}
+		if b.Session.HistoryLimit == 0 {
+			b.Session.HistoryLimit = 20
 		}
 		if b.Group.Trigger == "" {
 			b.Group.Trigger = "@bot"

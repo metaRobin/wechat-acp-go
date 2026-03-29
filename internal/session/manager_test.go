@@ -2,8 +2,10 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -380,5 +382,199 @@ func TestIntegration_NoAgentSelected(t *testing.T) {
 	err := mgr.Enqueue("u:user1", PendingMessage{Text: "hello", ContextToken: "user1"}, "")
 	if err == nil {
 		t.Fatal("expected error for empty agent ID, got nil")
+	}
+}
+
+func TestFormatHistory(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+
+	_ = store.UpsertSession("u:user1", StateActive, "test")
+	_ = store.AppendMessage("u:user1", "user", "hello")
+	_ = store.AppendMessage("u:user1", "assistant", "hi there")
+	_ = store.AppendMessage("u:user1", "user", "how are you")
+
+	mgr := NewManager(ManagerOpts{
+		Registry:     mockRegistry(&mockBackend{}),
+		HistoryLimit: 20,
+		Store:        store,
+		Logger:       slog.Default(),
+	})
+
+	history := mgr.formatHistory("u:user1")
+	if history == "" {
+		t.Fatal("expected non-empty history")
+	}
+	if !strings.Contains(history, "[以下是之前的对话历史]") {
+		t.Error("missing history header")
+	}
+	if !strings.Contains(history, "User: hello") {
+		t.Error("missing user message")
+	}
+	if !strings.Contains(history, "Assistant: hi there") {
+		t.Error("missing assistant message")
+	}
+	if !strings.Contains(history, "[对话历史结束]") {
+		t.Error("missing history footer")
+	}
+}
+
+func TestFormatHistory_Empty(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+
+	mgr := NewManager(ManagerOpts{
+		Registry: mockRegistry(&mockBackend{}),
+		Store:    store,
+		Logger:   slog.Default(),
+	})
+
+	history := mgr.formatHistory("u:nobody")
+	if history != "" {
+		t.Errorf("expected empty history, got %q", history)
+	}
+}
+
+func TestIntegration_HistoryInjection(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+
+	// Pre-populate history
+	_ = store.UpsertSession("u:user1", StateSuspended, "test")
+	_ = store.AppendMessage("u:user1", "user", "previous question")
+	_ = store.AppendMessage("u:user1", "assistant", "previous answer")
+
+	mock := &mockBackend{}
+
+	mgr := NewManager(ManagerOpts{
+		Registry:      mockRegistry(mock),
+		DefaultAgent:  "test",
+		HistoryLimit:  20,
+		IdleTimeout:   time.Hour,
+		MaxConcurrent: 5,
+		Store:         store,
+		OnReply:       func(_, _, _ string) {},
+		Logger:        slog.Default(),
+	})
+	mgr.Start()
+	defer mgr.Stop()
+
+	// First message should inject history
+	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "new question", ContextToken: "user1"}, "test")
+	time.Sleep(300 * time.Millisecond)
+
+	prompts := mock.getPrompts()
+	if len(prompts) < 1 {
+		t.Fatal("expected at least 1 prompt")
+	}
+	if !strings.Contains(prompts[0], "[以下是之前的对话历史]") {
+		t.Errorf("first prompt should contain history, got: %s", prompts[0][:min(len(prompts[0]), 100)])
+	}
+	if !strings.Contains(prompts[0], "new question") {
+		t.Error("first prompt should contain the actual message")
+	}
+
+	// Second message should NOT inject history
+	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "follow up", ContextToken: "user1"}, "test")
+	time.Sleep(300 * time.Millisecond)
+
+	prompts = mock.getPrompts()
+	if len(prompts) < 2 {
+		t.Fatal("expected at least 2 prompts")
+	}
+	if strings.Contains(prompts[1], "[以下是之前的对话历史]") {
+		t.Error("second prompt should NOT contain history")
+	}
+	if prompts[1] != "follow up" {
+		t.Errorf("second prompt = %q, want 'follow up'", prompts[1])
+	}
+}
+
+func TestFormatHistory_Limit(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+
+	_ = store.UpsertSession("u:user1", StateActive, "test")
+	for i := 0; i < 50; i++ {
+		_ = store.AppendMessage("u:user1", "user", fmt.Sprintf("msg%d", i))
+	}
+
+	mgr := NewManager(ManagerOpts{
+		Registry:     mockRegistry(&mockBackend{}),
+		HistoryLimit: 5,
+		Store:        store,
+		Logger:       slog.Default(),
+	})
+
+	history := mgr.formatHistory("u:user1")
+	// Should only contain the 5 most recent messages (msg45-msg49)
+	if !strings.Contains(history, "msg49") {
+		t.Error("should contain most recent message")
+	}
+	if strings.Contains(history, "msg0") {
+		t.Error("should NOT contain oldest message with limit=5")
+	}
+}
+
+func TestIntegration_ClearCommand(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+
+	mock := &mockBackend{}
+
+	mgr := NewManager(ManagerOpts{
+		Registry:      mockRegistry(mock),
+		DefaultAgent:  "test",
+		IdleTimeout:   time.Hour,
+		MaxConcurrent: 5,
+		Store:         store,
+		OnReply:       func(_, _, _ string) {},
+		Logger:        slog.Default(),
+	})
+	mgr.Start()
+	defer mgr.Stop()
+
+	// Create a session with messages
+	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "hello", ContextToken: "user1"}, "test")
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify messages exist
+	msgs, _ := store.LoadRecentMessages("u:user1", 10)
+	if len(msgs) == 0 {
+		t.Fatal("expected messages to exist before clear")
+	}
+
+	// Clear
+	mgr.RemoveSession("u:user1")
+
+	// Verify messages deleted
+	msgs, _ = store.LoadRecentMessages("u:user1", 10)
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages after clear, got %d", len(msgs))
+	}
+
+	// Verify session removed
+	if mgr.HasSession("u:user1") {
+		t.Error("session should be removed after clear")
 	}
 }

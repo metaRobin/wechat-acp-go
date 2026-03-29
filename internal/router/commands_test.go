@@ -15,6 +15,8 @@ func TestParseCommand(t *testing.T) {
 		{"/agents", false, "agents", ""},
 		{"/status", false, "status", ""},
 		{"/STATUS", false, "status", ""},
+		{"/clear", false, "clear", ""},
+		{"/CLEAR", false, "clear", ""},
 		{"/Use Claude", false, "use", "Claude"},
 
 		// Not commands — should return nil
