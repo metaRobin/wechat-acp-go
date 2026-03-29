@@ -1,6 +1,6 @@
-# Binaries
-wechat-acp
-wechat-acp-*
+# Binaries (root level only)
+/wechat-router
+/wechat-router-*
 *.exe
 *.dll
 *.so

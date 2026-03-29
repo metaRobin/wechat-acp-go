@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/metaRobin/wechat-acp-go/internal/bridge"
-	"github.com/metaRobin/wechat-acp-go/internal/config"
+	"github.com/metaRobin/wechat-router-go/internal/bridge"
+	"github.com/metaRobin/wechat-router-go/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -34,9 +34,9 @@ func main() {
 	)
 
 	rootCmd := &cobra.Command{
-		Use:   "wechat-acp-go",
+		Use:   "wechat-router-go",
 		Short: "Bridge WeChat to any ACP-compatible AI agent",
-		Long:  "wechat-acp-go — Bridge WeChat private/group chats to any ACP-compatible AI agent",
+		Long:  "wechat-router-go — Bridge WeChat private/group chats to any ACP-compatible AI agent",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runStart(cmd.Context(), startOpts{
 				agent:        flagAgent,

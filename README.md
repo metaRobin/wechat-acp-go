@@ -1,4 +1,4 @@
-# wechat-acp-go
+# wechat-router-go
 
 Bridge WeChat (via iLink Bot API) to any ACP-compatible AI agent. Single binary, multi-bot, group chat ready.
 
@@ -19,13 +19,13 @@ Bridge WeChat (via iLink Bot API) to any ACP-compatible AI agent. Single binary,
 make build
 
 # Run with a built-in agent preset
-./wechat-acp --agent claude
+./wechat-router --agent claude
 
 # Run with a custom agent command
-./wechat-acp --agent "my-agent --flag"
+./wechat-router --agent "my-agent --flag"
 
 # Run with config file
-./wechat-acp --config config.toml
+./wechat-router --config config.toml
 ```
 
 On first run, a QR code URL is printed. Scan it with WeChat to log in. Credentials are cached for subsequent runs.
@@ -33,7 +33,7 @@ On first run, a QR code URL is printed. Scan it with WeChat to log in. Credentia
 ## Built-in Agent Presets
 
 ```bash
-./wechat-acp agents
+./wechat-router agents
 ```
 
 | ID | Command | Description |
@@ -51,7 +51,7 @@ Create a `config.toml` file (see `config.example.toml` for full reference):
 
 ```toml
 [global]
-storage_dir = "~/.wechat-acp-go"
+storage_dir = "~/.wechat-router-go"
 log_level = "info"
 
 [[bot]]
@@ -131,7 +131,7 @@ WeChat iLink API
 
 | Package | Purpose |
 |---------|---------|
-| `cmd/wechat-acp` | CLI entry point (cobra) |
+| `cmd/wechat-router` | CLI entry point (cobra) |
 | `internal/bridge` | Orchestrates bot + sessions + router |
 | `internal/router` | Message routing and group trigger detection |
 | `internal/session` | Session lifecycle, manager, SQLite store |

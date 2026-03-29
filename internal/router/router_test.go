@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/metaRobin/wechat-acp-go/internal/config"
+	"github.com/metaRobin/wechat-router-go/internal/config"
 )
 
 func newTestRouter(botName string, group config.GroupConfig) *Router {

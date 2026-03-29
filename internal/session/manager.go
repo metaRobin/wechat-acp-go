@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/metaRobin/wechat-acp-go/internal/agent"
+	"github.com/metaRobin/wechat-router-go/internal/agent"
 )
 
 // PendingMessage is a message waiting to be processed.

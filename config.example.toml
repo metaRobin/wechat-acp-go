@@ -1,8 +1,8 @@
-# wechat-acp-go configuration
+# wechat-router-go configuration
 
 [global]
 # Data directory for tokens, sessions, logs
-storage_dir = "~/.wechat-acp-go"
+storage_dir = "~/.wechat-router-go"
 # Log level: debug, info, warn, error
 log_level = "info"
 
@@ -13,7 +13,7 @@ log_level = "info"
 [[bot]]
 # Unique instance name
 name = "coding-bot"
-# Built-in preset or custom command (see: wechat-acp-go agents)
+# Built-in preset or custom command (see: wechat-router-go agents)
 agent = "claude"
 
 [bot.wechat]
@@ -49,8 +49,8 @@ session_mode = "per_group"
 [bot.daemon]
 # Run in background after login
 enabled = false
-# pid_file = "~/.wechat-acp-go/coding-bot.pid"
-# log_file = "~/.wechat-acp-go/coding-bot.log"
+# pid_file = "~/.wechat-router-go/coding-bot.pid"
+# log_file = "~/.wechat-router-go/coding-bot.log"
 
 # ─────────────────────────────────────────
 # Custom agent presets (extend built-in ones)

@@ -1,6 +1,6 @@
-BINARY    := wechat-acp
-MODULE    := github.com/metaRobin/wechat-acp-go
-CMD       := ./cmd/wechat-acp
+BINARY    := wechat-router
+MODULE    := github.com/metaRobin/wechat-router-go
+CMD       := ./cmd/wechat-router
 VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS   := -s -w -X main.version=$(VERSION)
 

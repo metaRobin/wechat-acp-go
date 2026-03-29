@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/metaRobin/wechat-acp-go/internal/agent"
+	"github.com/metaRobin/wechat-router-go/internal/agent"
 )
 
 // mockBackend is a test Backend that echoes input with a prefix.

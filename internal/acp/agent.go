@@ -58,7 +58,7 @@ func Spawn(ctx context.Context, opts SpawnOpts) (*AgentProcess, error) {
 	_, err = conn.Initialize(ctx, sdk.InitializeRequest{
 		ProtocolVersion: sdk.ProtocolVersionNumber,
 		ClientInfo: &sdk.Implementation{
-			Name:    "wechat-acp-go",
+			Name:    "wechat-router-go",
 			Version: "0.1.0",
 		},
 		ClientCapabilities: sdk.ClientCapabilities{

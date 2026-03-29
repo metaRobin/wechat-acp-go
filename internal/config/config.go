@@ -175,7 +175,7 @@ func validate(cfg *Config) error {
 
 func defaultStorageDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".wechat-acp-go")
+	return filepath.Join(home, ".wechat-router-go")
 }
 
 func expandHome(path string) string {

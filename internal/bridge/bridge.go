@@ -9,11 +9,11 @@ import (
 
 	wechatbot "github.com/corespeed-io/wechatbot/golang"
 
-	"github.com/metaRobin/wechat-acp-go/internal/adapter"
-	agentpkg "github.com/metaRobin/wechat-acp-go/internal/agent"
-	"github.com/metaRobin/wechat-acp-go/internal/config"
-	"github.com/metaRobin/wechat-acp-go/internal/router"
-	"github.com/metaRobin/wechat-acp-go/internal/session"
+	"github.com/metaRobin/wechat-router-go/internal/adapter"
+	agentpkg "github.com/metaRobin/wechat-router-go/internal/agent"
+	"github.com/metaRobin/wechat-router-go/internal/config"
+	"github.com/metaRobin/wechat-router-go/internal/router"
+	"github.com/metaRobin/wechat-router-go/internal/session"
 )
 
 // Bridge connects a WeChat bot to AI agent sessions.

@@ -1,4 +1,4 @@
-module github.com/metaRobin/wechat-acp-go
+module github.com/metaRobin/wechat-router-go
 
 go 1.25.6
 
