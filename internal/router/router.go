@@ -6,8 +6,8 @@ import (
 
 	wechatbot "github.com/corespeed-io/wechatbot/golang"
 
-	"github.com/anthropic/wechat-acp-go/internal/config"
-	"github.com/anthropic/wechat-acp-go/internal/session"
+	"github.com/metaRobin/wechat-acp-go/internal/config"
+	"github.com/metaRobin/wechat-acp-go/internal/session"
 )
 
 // Router determines how incoming WeChat messages are routed to ACP sessions.

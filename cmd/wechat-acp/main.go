@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anthropic/wechat-acp-go/internal/bridge"
-	"github.com/anthropic/wechat-acp-go/internal/config"
+	"github.com/metaRobin/wechat-acp-go/internal/bridge"
+	"github.com/metaRobin/wechat-acp-go/internal/config"
 	"github.com/spf13/cobra"
 )
 

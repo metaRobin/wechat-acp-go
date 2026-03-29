@@ -1,4 +1,4 @@
-module github.com/anthropic/wechat-acp-go
+module github.com/metaRobin/wechat-acp-go
 
 go 1.25.6
 

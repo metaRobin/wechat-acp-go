@@ -7,7 +7,7 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	acputil "github.com/anthropic/wechat-acp-go/internal/acp"
+	acputil "github.com/metaRobin/wechat-acp-go/internal/acp"
 )
 
 // ACPBackend wraps an ACP agent process as a Backend.
