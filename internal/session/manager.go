@@ -22,6 +22,7 @@ type PendingMessage struct {
 // UserSession represents a single active session.
 type UserSession struct {
 	Key          string
+	AgentID      string
 	Backend      agent.Backend
 	MsgCh        chan PendingMessage
 	lastActivity atomic.Int64 // unix millis
@@ -33,9 +34,13 @@ type UserSession struct {
 // BackendFactory creates a Backend for a new session.
 type BackendFactory func(ctx context.Context) (agent.Backend, error)
 
+// BackendRegistry maps agent IDs to their BackendFactory.
+type BackendRegistry map[string]BackendFactory
+
 // ManagerOpts configures the SessionManager.
 type ManagerOpts struct {
-	NewBackend    BackendFactory
+	Registry      BackendRegistry
+	DefaultAgent  string // optional: auto-use this agent if set
 	IdleTimeout   time.Duration
 	MaxConcurrent int
 
@@ -101,16 +106,50 @@ func (m *Manager) Stop() {
 	m.sessions = make(map[string]*UserSession)
 }
 
+// HasSession returns true if a session exists for the given key.
+func (m *Manager) HasSession(key string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, ok := m.sessions[key]
+	return ok
+}
+
+// GetSessionAgentID returns the agent ID for an existing session, or "" if none.
+func (m *Manager) GetSessionAgentID(key string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if sess, ok := m.sessions[key]; ok {
+		return sess.AgentID
+	}
+	return ""
+}
+
+// DefaultAgent returns the configured default agent ID.
+func (m *Manager) DefaultAgent() string {
+	return m.opts.DefaultAgent
+}
+
+// HasAgent checks if an agent ID exists in the registry.
+func (m *Manager) HasAgent(agentID string) bool {
+	_, ok := m.opts.Registry[agentID]
+	return ok
+}
+
 // Enqueue adds a message to the session's queue. Creates a new session if needed.
-func (m *Manager) Enqueue(sessionKey string, msg PendingMessage) error {
+// agentID specifies which agent to use; empty string uses the session's existing agent.
+func (m *Manager) Enqueue(sessionKey string, msg PendingMessage, agentID string) error {
 	m.mu.Lock()
 	sess, exists := m.sessions[sessionKey]
 	if !exists {
+		if agentID == "" {
+			m.mu.Unlock()
+			return fmt.Errorf("no agent selected")
+		}
 		if len(m.sessions) >= m.opts.MaxConcurrent {
 			m.evictOldestLocked()
 		}
 		var err error
-		sess, err = m.createSessionLocked(sessionKey)
+		sess, err = m.createSessionLocked(sessionKey, agentID)
 		if err != nil {
 			m.mu.Unlock()
 			return fmt.Errorf("create session %s: %w", sessionKey, err)
@@ -127,10 +166,37 @@ func (m *Manager) Enqueue(sessionKey string, msg PendingMessage) error {
 	return nil
 }
 
-func (m *Manager) createSessionLocked(key string) (*UserSession, error) {
+// SwitchAgent kills the current session and creates a new one with a different agent.
+func (m *Manager) SwitchAgent(sessionKey, newAgentID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Kill existing session if present
+	if sess, ok := m.sessions[sessionKey]; ok {
+		sess.cancel()
+		if sess.Backend != nil {
+			sess.Backend.Kill()
+		}
+		delete(m.sessions, sessionKey)
+	}
+
+	// Create new session with the new agent
+	if len(m.sessions) >= m.opts.MaxConcurrent {
+		m.evictOldestLocked()
+	}
+	_, err := m.createSessionLocked(sessionKey, newAgentID)
+	return err
+}
+
+func (m *Manager) createSessionLocked(key, agentID string) (*UserSession, error) {
+	factory, ok := m.opts.Registry[agentID]
+	if !ok {
+		return nil, fmt.Errorf("unknown agent: %s", agentID)
+	}
+
 	sessCtx, sessCancel := context.WithCancel(m.ctx)
 
-	backend, err := m.opts.NewBackend(sessCtx)
+	backend, err := factory(sessCtx)
 	if err != nil {
 		sessCancel()
 		return nil, err
@@ -138,6 +204,7 @@ func (m *Manager) createSessionLocked(key string) (*UserSession, error) {
 
 	sess := &UserSession{
 		Key:       key,
+		AgentID:   agentID,
 		Backend:   backend,
 		MsgCh:     make(chan PendingMessage, 32),
 		CreatedAt: time.Now(),
@@ -150,10 +217,10 @@ func (m *Manager) createSessionLocked(key string) (*UserSession, error) {
 	go m.consumeLoop(sess)
 
 	if m.opts.Store != nil {
-		_ = m.opts.Store.UpsertSession(key, StateActive)
+		_ = m.opts.Store.UpsertSession(key, StateActive, agentID)
 	}
 
-	m.opts.Logger.Info("session_created", "key", key)
+	m.opts.Logger.Info("session_created", "key", key, "agent", agentID)
 	return sess, nil
 }
 
@@ -179,15 +246,11 @@ func (m *Manager) consumeLoop(sess *UserSession) {
 }
 
 func (m *Manager) processMessage(sess *UserSession, msg PendingMessage) {
-	// Send typing indicator
 	if m.opts.SendTyping != nil {
 		m.opts.SendTyping(sess.Key, msg.ContextToken)
 	}
 
-	// Send prompt to agent backend
-	var replyParts []string
 	result, err := sess.Backend.Prompt(sess.ctx, msg.Text, func(chunk string) {
-		// Stream callback: send typing on chunks
 		if m.opts.SendTyping != nil {
 			m.opts.SendTyping(sess.Key, msg.ContextToken)
 		}
@@ -195,7 +258,7 @@ func (m *Manager) processMessage(sess *UserSession, msg PendingMessage) {
 
 	if err != nil {
 		if sess.ctx.Err() != nil {
-			return // session cancelled
+			return
 		}
 		m.opts.Logger.Error("prompt_failed", "key", sess.Key, "error", err)
 		if m.opts.OnReply != nil {
@@ -206,11 +269,9 @@ func (m *Manager) processMessage(sess *UserSession, msg PendingMessage) {
 
 	replyText := result.Text
 	if result.StopReason == "cancelled" {
-		replyParts = append(replyParts, replyText, "\n[cancelled]")
-		replyText = strings.Join(replyParts, "")
+		replyText += "\n[cancelled]"
 	} else if result.StopReason == "refusal" {
-		replyParts = append(replyParts, replyText, "\n[agent refused to continue]")
-		replyText = strings.Join(replyParts, "")
+		replyText += "\n[agent refused to continue]"
 	}
 
 	if strings.TrimSpace(replyText) != "" && m.opts.OnReply != nil {
@@ -219,7 +280,6 @@ func (m *Manager) processMessage(sess *UserSession, msg PendingMessage) {
 
 	sess.lastActivity.Store(time.Now().UnixMilli())
 
-	// Persist
 	if m.opts.Store != nil {
 		_ = m.opts.Store.AppendMessage(sess.Key, "user", msg.Text)
 		if strings.TrimSpace(replyText) != "" {

@@ -18,29 +18,31 @@ import (
 
 // Bridge connects a WeChat bot to AI agent sessions.
 type Bridge struct {
-	cfg        *config.BotConfig
-	resolved   config.ResolvedAgent
-	storageDir string
-	verbose    bool
-	logger     *slog.Logger
-	mgr        *session.Manager
-	bot        *wechatbot.Bot
+	cfg          *config.BotConfig
+	defaultAgent string
+	customAgents map[string]config.AgentPreset
+	storageDir   string
+	verbose      bool
+	logger       *slog.Logger
+	mgr          *session.Manager
+	bot          *wechatbot.Bot
 }
 
 // New creates a Bridge for a single bot configuration.
-func New(cfg *config.BotConfig, resolved config.ResolvedAgent, storageDir string, verbose bool, logger *slog.Logger) *Bridge {
+func New(cfg *config.BotConfig, defaultAgent string, customAgents map[string]config.AgentPreset, storageDir string, verbose bool, logger *slog.Logger) *Bridge {
 	return &Bridge{
-		cfg:        cfg,
-		resolved:   resolved,
-		storageDir: storageDir,
-		verbose:    verbose,
-		logger:     logger,
+		cfg:          cfg,
+		defaultAgent: defaultAgent,
+		customAgents: customAgents,
+		storageDir:   storageDir,
+		verbose:      verbose,
+		logger:       logger,
 	}
 }
 
 // Run starts the full bridge lifecycle.
 func (b *Bridge) Run(ctx context.Context, forceLogin bool) error {
-	b.logger.Info("bridge_starting", "bot", b.cfg.Name, "agent", b.resolved.Label)
+	b.logger.Info("bridge_starting", "bot", b.cfg.Name, "default_agent", b.defaultAgent)
 
 	credPath := filepath.Join(b.storageDir, b.cfg.Name+".cred.json")
 
@@ -80,11 +82,12 @@ func (b *Bridge) Run(ctx context.Context, forceLogin bool) error {
 	}
 	defer store.Close()
 
-	// Build backend factory based on agent type
-	backendFactory := b.makeBackendFactory()
+	// Build backend registry from all available presets
+	registry := b.buildRegistry()
 
 	b.mgr = session.NewManager(session.ManagerOpts{
-		NewBackend:    backendFactory,
+		Registry:      registry,
+		DefaultAgent:  b.defaultAgent,
 		IdleTimeout:   b.cfg.Session.IdleTimeout.Duration,
 		MaxConcurrent: b.cfg.Session.MaxConcurrent,
 		OnReply:       b.sendReply,
@@ -94,10 +97,10 @@ func (b *Bridge) Run(ctx context.Context, forceLogin bool) error {
 	})
 	b.mgr.Start()
 
-	r := router.NewRouter(b.cfg.Name, b.cfg.Group, b.mgr, b.bot, b.logger)
+	r := router.NewRouter(b.cfg.Name, b.cfg.Group, b.mgr, b.bot, b.customAgents, b.logger)
 	b.bot.OnMessage(r.Route)
 
-	b.logger.Info("bridge_running", "bot", b.cfg.Name)
+	b.logger.Info("bridge_running", "bot", b.cfg.Name, "agents", len(registry))
 	err = b.bot.Run(ctx)
 
 	b.mgr.Stop()
@@ -106,34 +109,71 @@ func (b *Bridge) Run(ctx context.Context, forceLogin bool) error {
 	return err
 }
 
-// makeBackendFactory returns a factory that creates the appropriate backend type.
-func (b *Bridge) makeBackendFactory() session.BackendFactory {
+// buildRegistry creates BackendFactories for all available agent presets.
+func (b *Bridge) buildRegistry() session.BackendRegistry {
+	registry := make(session.BackendRegistry)
+
 	agentEnv := make(map[string]string)
 	for k, v := range b.cfg.AgentCfg.Env {
 		agentEnv[k] = v
 	}
 
-	// Use Claude CLI backend for the "claude" preset (direct OAuth, no API key needed)
-	if b.resolved.ID == "claude" || b.resolved.Command == "claude" {
+	// Register all built-in presets
+	for id, preset := range config.BuiltInAgents {
+		id, preset := id, preset // capture
+		registry[id] = b.makeFactory(id, preset, agentEnv)
+	}
+
+	// Register custom presets
+	for id, preset := range b.customAgents {
+		if _, builtin := config.BuiltInAgents[id]; !builtin {
+			id, preset := id, preset
+			registry[id] = b.makeFactory(id, preset, agentEnv)
+		}
+	}
+
+	return registry
+}
+
+func (b *Bridge) makeFactory(id string, preset config.AgentPreset, agentEnv map[string]string) session.BackendFactory {
+	// Merge preset env with bot env
+	env := make(map[string]string)
+	for k, v := range agentEnv {
+		env[k] = v
+	}
+	for k, v := range preset.Env {
+		env[k] = v
+	}
+
+	if id == "claude" || preset.Command == "claude" {
 		return func(ctx context.Context) (agentpkg.Backend, error) {
 			return agentpkg.NewClaudeBackend(agentpkg.ClaudeOpts{
 				Cwd:    b.cfg.AgentCfg.Cwd,
-				Env:    agentEnv,
+				Env:    env,
 				Logger: b.logger,
 			}), nil
 		}
 	}
 
-	// Default: ACP protocol backend
+	if id == "codex" || preset.Command == "codex" {
+		return func(ctx context.Context) (agentpkg.Backend, error) {
+			return agentpkg.NewCodexBackend(agentpkg.CodexOpts{
+				Cwd:    b.cfg.AgentCfg.Cwd,
+				Env:    env,
+				Logger: b.logger,
+			}), nil
+		}
+	}
+
+	// Generic CLI backend for all other agents
 	return func(ctx context.Context) (agentpkg.Backend, error) {
-		return agentpkg.NewACPBackend(ctx, agentpkg.ACPOpts{
-			Command:      b.resolved.Command,
-			Args:         b.resolved.Args,
-			Cwd:          b.cfg.AgentCfg.Cwd,
-			Env:          agentEnv,
-			ShowThoughts: b.cfg.AgentCfg.ShowThoughts,
-			Logger:       b.logger,
-		})
+		return agentpkg.NewGenericCLIBackend(agentpkg.GenericCLIOpts{
+			Command: preset.Command,
+			Args:    preset.Args,
+			Cwd:     b.cfg.AgentCfg.Cwd,
+			Env:     env,
+			Logger:  b.logger,
+		}), nil
 	}
 }
 
@@ -153,14 +193,12 @@ func (b *Bridge) sendReply(sessionKey, contextToken, text string) {
 	if formatted == "" {
 		return
 	}
-
 	segments := adapter.SplitText(formatted, 4000)
 	for _, seg := range segments {
 		if err := b.bot.Send(context.Background(), contextToken, seg); err != nil {
 			b.logger.Error("send_failed", "target", contextToken, "error", err)
 		}
 	}
-
 	_ = b.bot.StopTyping(context.Background(), contextToken)
 }
 

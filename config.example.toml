@@ -13,8 +13,8 @@ log_level = "info"
 [[bot]]
 # Unique instance name
 name = "coding-bot"
-# Built-in preset or custom command (see: wechat-router-go agents)
-agent = "claude"
+# Default agent preset (optional). If omitted, users select via /use command in chat.
+# agent = "claude"
 
 [bot.wechat]
 # Usually no need to change these

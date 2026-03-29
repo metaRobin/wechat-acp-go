@@ -184,8 +184,8 @@ func TestResolveAgent_BuiltIn(t *testing.T) {
 	if r.ID != "claude" {
 		t.Errorf("ID = %q, want claude", r.ID)
 	}
-	if r.Label != "Claude Code (direct)" {
-		t.Errorf("Label = %q, want Claude Code (direct)", r.Label)
+	if r.Label != "Claude Code" {
+		t.Errorf("Label = %q, want Claude Code", r.Label)
 	}
 	if r.Command != "claude" {
 		t.Errorf("Command = %q, want claude", r.Command)
@@ -286,7 +286,7 @@ func TestDuration_UnmarshalText_Invalid(t *testing.T) {
 
 func TestListPresets(t *testing.T) {
 	presets := ListPresets()
-	expectedIDs := []string{"claude", "claude-acp", "codex", "copilot", "gemini", "opencode", "qwen"}
+	expectedIDs := []string{"claude", "codex", "copilot", "gemini", "opencode", "qwen"}
 
 	if len(presets) != len(expectedIDs) {
 		t.Fatalf("len(presets) = %d, want %d", len(presets), len(expectedIDs))

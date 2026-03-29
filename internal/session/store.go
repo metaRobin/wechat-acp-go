@@ -21,6 +21,7 @@ const (
 type StoredSession struct {
 	Key          string
 	State        SessionState
+	AgentID      string
 	LastActivity time.Time
 	CreatedAt    time.Time
 }
@@ -74,6 +75,7 @@ func (s *Store) createSchema() error {
 	CREATE TABLE IF NOT EXISTS sessions (
 		key          TEXT PRIMARY KEY,
 		state        TEXT NOT NULL DEFAULT 'active',
+		agent_id     TEXT NOT NULL DEFAULT '',
 		last_activity INTEGER NOT NULL,
 		created_at   INTEGER NOT NULL
 	);
@@ -100,11 +102,11 @@ func (s *Store) createSchema() error {
 // GetSession retrieves a session by key.
 func (s *Store) GetSession(key string) (*StoredSession, error) {
 	row := s.db.QueryRow(
-		"SELECT key, state, last_activity, created_at FROM sessions WHERE key = ?", key)
+		"SELECT key, state, agent_id, last_activity, created_at FROM sessions WHERE key = ?", key)
 
 	var sess StoredSession
 	var lastActivity, createdAt int64
-	err := row.Scan(&sess.Key, &sess.State, &lastActivity, &createdAt)
+	err := row.Scan(&sess.Key, &sess.State, &sess.AgentID, &lastActivity, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -117,13 +119,13 @@ func (s *Store) GetSession(key string) (*StoredSession, error) {
 }
 
 // UpsertSession creates or updates a session record.
-func (s *Store) UpsertSession(key string, state SessionState) error {
+func (s *Store) UpsertSession(key string, state SessionState, agentID string) error {
 	now := time.Now().UnixMilli()
 	_, err := s.db.Exec(`
-		INSERT INTO sessions (key, state, last_activity, created_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(key) DO UPDATE SET state = ?, last_activity = ?`,
-		key, state, now, now, state, now)
+		INSERT INTO sessions (key, state, agent_id, last_activity, created_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET state = ?, agent_id = ?, last_activity = ?`,
+		key, state, agentID, now, now, state, agentID, now)
 	if err != nil {
 		return fmt.Errorf("upsert session %s: %w", key, err)
 	}
@@ -152,7 +154,7 @@ func (s *Store) UpdateState(key string, state SessionState) error {
 // ListActiveSessions returns all sessions in the given state.
 func (s *Store) ListActiveSessions() ([]StoredSession, error) {
 	rows, err := s.db.Query(
-		"SELECT key, state, last_activity, created_at FROM sessions WHERE state = ?",
+		"SELECT key, state, agent_id, last_activity, created_at FROM sessions WHERE state = ?",
 		StateActive)
 	if err != nil {
 		return nil, fmt.Errorf("list active sessions: %w", err)
@@ -163,7 +165,7 @@ func (s *Store) ListActiveSessions() ([]StoredSession, error) {
 	for rows.Next() {
 		var sess StoredSession
 		var lastActivity, createdAt int64
-		if err := rows.Scan(&sess.Key, &sess.State, &lastActivity, &createdAt); err != nil {
+		if err := rows.Scan(&sess.Key, &sess.State, &sess.AgentID, &lastActivity, &createdAt); err != nil {
 			return nil, err
 		}
 		sess.LastActivity = time.UnixMilli(lastActivity)

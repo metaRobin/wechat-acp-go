@@ -1,60 +1,36 @@
 package adapter
 
 import (
-	"context"
-	"encoding/base64"
 	"fmt"
-	"path/filepath"
 	"strings"
 
-	sdk "github.com/coder/acp-go-sdk"
 	wechatbot "github.com/corespeed-io/wechatbot/golang"
 )
 
-// textFileExts lists extensions considered as text files for resource conversion.
-var textFileExts = map[string]bool{
-	".txt": true, ".md": true, ".json": true, ".js": true, ".ts": true,
-	".py": true, ".java": true, ".c": true, ".cpp": true, ".h": true,
-	".css": true, ".html": true, ".xml": true, ".yaml": true, ".yml": true,
-	".toml": true, ".ini": true, ".cfg": true, ".sh": true, ".bash": true,
-	".rs": true, ".go": true, ".rb": true, ".php": true, ".sql": true,
-	".csv": true, ".log": true, ".env": true,
-}
-
-// IncomingToPrompt converts a wechatbot IncomingMessage to ACP ContentBlocks.
+// IncomingToText extracts plain text from a WeChat IncomingMessage.
 // If isGroup is true, sender identity is prepended.
-func IncomingToPrompt(
-	ctx context.Context,
-	msg *wechatbot.IncomingMessage,
-	bot *wechatbot.Bot,
-	isGroup bool,
-	senderName string,
-) []sdk.ContentBlock {
-	var blocks []sdk.ContentBlock
+func IncomingToText(msg *wechatbot.IncomingMessage, isGroup bool, senderName string) string {
+	var parts []string
 
-	// Inject sender identity for group messages
 	if isGroup && senderName != "" {
-		blocks = append(blocks, sdk.TextBlock(fmt.Sprintf("[%s says]:", senderName)))
+		parts = append(parts, fmt.Sprintf("[%s says]:", senderName))
 	}
 
-	// Extract text content
 	text := extractText(msg)
 	if text != "" {
-		blocks = append(blocks, sdk.TextBlock(text))
+		parts = append(parts, text)
 	}
 
-	// Extract media content
-	mediaBlock := convertMedia(ctx, msg, bot)
-	if mediaBlock != nil {
-		blocks = append(blocks, *mediaBlock)
+	mediaText := describeMedia(msg)
+	if mediaText != "" {
+		parts = append(parts, mediaText)
 	}
 
-	// Fallback for empty messages
-	if len(blocks) == 0 || (len(blocks) == 1 && isGroup) {
-		blocks = append(blocks, sdk.TextBlock("[empty message]"))
+	if len(parts) == 0 || (len(parts) == 1 && isGroup) {
+		parts = append(parts, "[empty message]")
 	}
 
-	return blocks
+	return strings.Join(parts, "\n")
 }
 
 func extractText(msg *wechatbot.IncomingMessage) string {
@@ -62,27 +38,22 @@ func extractText(msg *wechatbot.IncomingMessage) string {
 	case wechatbot.ContentText:
 		text := msg.Text
 		if msg.QuotedMessage != nil {
-			var parts []string
+			var qparts []string
 			if msg.QuotedMessage.Title != "" {
-				parts = append(parts, msg.QuotedMessage.Title)
+				qparts = append(qparts, msg.QuotedMessage.Title)
 			}
 			if msg.QuotedMessage.Text != "" {
-				parts = append(parts, msg.QuotedMessage.Text)
+				qparts = append(qparts, msg.QuotedMessage.Text)
 			}
-			if len(parts) > 0 {
-				return fmt.Sprintf("[Quote: %s]\n%s", strings.Join(parts, " | "), text)
+			if len(qparts) > 0 {
+				return fmt.Sprintf("[Quote: %s]\n%s", strings.Join(qparts, " | "), text)
 			}
 		}
 		return text
 
 	case wechatbot.ContentVoice:
-		if len(msg.Voices) > 0 {
-			// Voice transcription text is in the first voice item
-			// The SDK stores transcription in a text field if available
-			// For now, return the main text field which may contain transcription
-			if msg.Text != "" {
-				return msg.Text
-			}
+		if msg.Text != "" {
+			return msg.Text
 		}
 		return ""
 
@@ -91,86 +62,23 @@ func extractText(msg *wechatbot.IncomingMessage) string {
 	}
 }
 
-func convertMedia(ctx context.Context, msg *wechatbot.IncomingMessage, bot *wechatbot.Bot) *sdk.ContentBlock {
+func describeMedia(msg *wechatbot.IncomingMessage) string {
 	switch msg.Type {
 	case wechatbot.ContentImage:
-		if len(msg.Images) == 0 {
-			return nil
-		}
-		downloaded, err := bot.Download(ctx, msg)
-		if err != nil {
-			block := sdk.TextBlock("[Received image - download failed]")
-			return &block
-		}
-		b64 := base64.StdEncoding.EncodeToString(downloaded.Data)
-		mimeType := "image/jpeg" // default; SDK doesn't provide MIME type
-		block := sdk.ImageBlock(b64, mimeType)
-		return &block
-
+		return "[Received image]"
 	case wechatbot.ContentFile:
-		if len(msg.Files) == 0 {
-			return nil
+		if len(msg.Files) > 0 {
+			return fmt.Sprintf("[Received file: %s]", msg.Files[0].FileName)
 		}
-		f := msg.Files[0]
-		ext := strings.ToLower(filepath.Ext(f.FileName))
-		if textFileExts[ext] {
-			downloaded, err := bot.Download(ctx, msg)
-			if err != nil {
-				block := sdk.TextBlock(fmt.Sprintf("[Received file: %s - download failed]", f.FileName))
-				return &block
-			}
-			block := sdk.ResourceBlock(sdk.EmbeddedResourceResource{
-				TextResourceContents: &sdk.TextResourceContents{
-					Uri:      "file://" + f.FileName,
-					MimeType: Ptr(mimeTypeFromExt(ext)),
-					Text:     string(downloaded.Data),
-				},
-			})
-			return &block
-		}
-		block := sdk.TextBlock(fmt.Sprintf("[Received file: %s]", f.FileName))
-		return &block
-
+		return "[Received file]"
 	case wechatbot.ContentVideo:
-		block := sdk.TextBlock("[Received video message]")
-		return &block
-
+		return "[Received video message]"
 	case wechatbot.ContentVoice:
 		if msg.Text == "" {
-			block := sdk.TextBlock("[Received voice message, no transcription available]")
-			return &block
+			return "[Received voice message, no transcription available]"
 		}
-		return nil // text already extracted
-
+		return ""
 	default:
-		return nil
+		return ""
 	}
 }
-
-func mimeTypeFromExt(ext string) string {
-	switch ext {
-	case ".json":
-		return "application/json"
-	case ".html":
-		return "text/html"
-	case ".xml":
-		return "text/xml"
-	case ".css":
-		return "text/css"
-	case ".js":
-		return "application/javascript"
-	case ".ts":
-		return "application/typescript"
-	case ".md":
-		return "text/markdown"
-	case ".csv":
-		return "text/csv"
-	case ".yaml", ".yml":
-		return "text/yaml"
-	default:
-		return "text/plain"
-	}
-}
-
-// Ptr returns a pointer to v.
-func Ptr[T any](v T) *T { return &v }

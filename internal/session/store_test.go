@@ -29,7 +29,7 @@ func TestOpenStore(t *testing.T) {
 func TestUpsertAndGetSession(t *testing.T) {
 	s := openTestStore(t)
 
-	if err := s.UpsertSession("u:alice", StateActive); err != nil {
+	if err := s.UpsertSession("u:alice", StateActive, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
 
@@ -69,7 +69,7 @@ func TestGetSessionNonExistent(t *testing.T) {
 func TestUpdateActivity(t *testing.T) {
 	s := openTestStore(t)
 
-	if err := s.UpsertSession("u:bob", StateActive); err != nil {
+	if err := s.UpsertSession("u:bob", StateActive, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
 
@@ -90,7 +90,7 @@ func TestUpdateActivity(t *testing.T) {
 func TestUpdateState(t *testing.T) {
 	s := openTestStore(t)
 
-	if err := s.UpsertSession("u:carol", StateActive); err != nil {
+	if err := s.UpsertSession("u:carol", StateActive, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
 
@@ -108,13 +108,13 @@ func TestListActiveSessions(t *testing.T) {
 	s := openTestStore(t)
 
 	// Create sessions with different states
-	if err := s.UpsertSession("u:active1", StateActive); err != nil {
+	if err := s.UpsertSession("u:active1", StateActive, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
-	if err := s.UpsertSession("u:active2", StateActive); err != nil {
+	if err := s.UpsertSession("u:active2", StateActive, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
-	if err := s.UpsertSession("u:suspended1", StateSuspended); err != nil {
+	if err := s.UpsertSession("u:suspended1", StateSuspended, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestAppendAndLoadRecentMessages(t *testing.T) {
 	s := openTestStore(t)
 
 	key := "u:dave"
-	if err := s.UpsertSession(key, StateActive); err != nil {
+	if err := s.UpsertSession(key, StateActive, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
 
@@ -188,7 +188,7 @@ func TestLoadRecentMessagesWithLimit(t *testing.T) {
 	s := openTestStore(t)
 
 	key := "u:eve"
-	if err := s.UpsertSession(key, StateActive); err != nil {
+	if err := s.UpsertSession(key, StateActive, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
 
@@ -222,7 +222,7 @@ func TestDeleteMessages(t *testing.T) {
 	s := openTestStore(t)
 
 	key := "u:frank"
-	if err := s.UpsertSession(key, StateActive); err != nil {
+	if err := s.UpsertSession(key, StateActive, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
 
@@ -250,7 +250,7 @@ func TestDeleteExpiredSessions(t *testing.T) {
 	s := openTestStore(t)
 
 	// Create a suspended session
-	if err := s.UpsertSession("u:old", StateSuspended); err != nil {
+	if err := s.UpsertSession("u:old", StateSuspended, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
 	// Add a message to verify cascade cleanup
@@ -259,7 +259,7 @@ func TestDeleteExpiredSessions(t *testing.T) {
 	}
 
 	// Create an active session (should not be deleted)
-	if err := s.UpsertSession("u:fresh", StateActive); err != nil {
+	if err := s.UpsertSession("u:fresh", StateActive, ""); err != nil {
 		t.Fatalf("UpsertSession: %v", err)
 	}
 

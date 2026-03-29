@@ -8,7 +8,7 @@ import (
 )
 
 func newTestRouter(botName string, group config.GroupConfig) *Router {
-	return NewRouter(botName, group, nil, nil, slog.Default())
+	return NewRouter(botName, group, nil, nil, nil, slog.Default())
 }
 
 func TestCheckGroupTriggerAll(t *testing.T) {

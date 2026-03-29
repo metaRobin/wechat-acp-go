@@ -35,8 +35,8 @@ func main() {
 
 	rootCmd := &cobra.Command{
 		Use:   "wechat-router-go",
-		Short: "Bridge WeChat to any ACP-compatible AI agent",
-		Long:  "wechat-router-go — Bridge WeChat private/group chats to any ACP-compatible AI agent",
+		Short: "Bridge WeChat to AI coding agents",
+		Long:  "wechat-router-go — Bridge WeChat private/group chats to AI coding agents (Claude, Codex, Gemini, etc.)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runStart(cmd.Context(), startOpts{
 				agent:        flagAgent,
@@ -95,12 +95,11 @@ func runStart(ctx context.Context, opts startOpts) error {
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
-	} else if opts.agent != "" {
+	} else {
+		// No config file: create default config with optional default agent
 		cfg = config.DefaultConfig()
 		botCfg := config.DefaultBotConfig("default", opts.agent)
 		cfg.Bot = append(cfg.Bot, botCfg)
-	} else {
-		return fmt.Errorf("--agent or --config is required")
 	}
 
 	// Apply CLI overrides to all bots
@@ -124,29 +123,8 @@ func runStart(ctx context.Context, opts startOpts) error {
 	}
 
 	// Handle daemon mode
-	if opts.daemon && os.Getenv("WECHAT_ACP_DAEMON") == "" {
+	if opts.daemon && os.Getenv("WECHAT_ROUTER_DAEMON") == "" {
 		return daemonize(cfg)
-	}
-
-	// Resolve agents for all bots
-	for i := range cfg.Bot {
-		b := &cfg.Bot[i]
-		if b.AgentCfg.Command == "" && b.Agent != "" {
-			resolved := config.ResolveAgent(b.Agent, cfg.Agents)
-			if resolved.Command == "" {
-				return fmt.Errorf("bot %q: cannot resolve agent %q", b.Name, b.Agent)
-			}
-			b.AgentCfg.Command = resolved.Command
-			b.AgentCfg.Args = resolved.Args
-			if resolved.Env != nil {
-				if b.AgentCfg.Env == nil {
-					b.AgentCfg.Env = make(map[string]string)
-				}
-				for k, v := range resolved.Env {
-					b.AgentCfg.Env[k] = v
-				}
-			}
-		}
 	}
 
 	// Setup logger
@@ -156,16 +134,11 @@ func runStart(ctx context.Context, opts startOpts) error {
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
 
-	// Start bridges
+	// Start bridges — agent selection is now dynamic per-session
 	bridges := make([]*bridge.Bridge, 0, len(cfg.Bot))
 	for i := range cfg.Bot {
 		b := &cfg.Bot[i]
-		resolved := config.ResolvedAgent{
-			Command: b.AgentCfg.Command,
-			Args:    b.AgentCfg.Args,
-			Label:   b.Agent,
-		}
-		br := bridge.New(b, resolved, cfg.Global.StorageDir, opts.verbose, logger.With("bot", b.Name))
+		br := bridge.New(b, b.Agent, cfg.Agents, cfg.Global.StorageDir, opts.verbose, logger.With("bot", b.Name))
 		bridges = append(bridges, br)
 	}
 
@@ -212,7 +185,7 @@ func daemonize(cfg *config.Config) error {
 	cmd := exec.Command(os.Args[0], args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.Env = append(os.Environ(), "WECHAT_ACP_DAEMON=1")
+	cmd.Env = append(os.Environ(), "WECHAT_ROUTER_DAEMON=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	if err := cmd.Start(); err != nil {
@@ -244,7 +217,7 @@ func agentsCmd() *cobra.Command {
 		Use:   "agents",
 		Short: "List built-in agent presets",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("Built-in ACP agent presets:")
+			fmt.Println("Built-in agent presets:")
 			fmt.Println()
 			for _, entry := range config.ListPresets() {
 				cmdLine := entry.Preset.Command + " " + strings.Join(entry.Preset.Args, " ")

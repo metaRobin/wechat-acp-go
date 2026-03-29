@@ -4,9 +4,9 @@ go 1.25.6
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/coder/acp-go-sdk v0.6.3
 	github.com/corespeed-io/wechatbot/golang v0.0.0-20260324012813-f1aa6b16e5f7
 	github.com/spf13/cobra v1.10.2
+	modernc.org/sqlite v1.48.0
 )
 
 require (
@@ -21,5 +21,4 @@ require (
 	modernc.org/libc v1.70.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.48.0 // indirect
 )

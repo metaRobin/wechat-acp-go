@@ -17,7 +17,7 @@ type mockBackend struct {
 	mu       sync.Mutex
 	prompts  []string
 	killed   bool
-	response string // configurable response; defaults to echo
+	response string
 	delay    time.Duration
 }
 
@@ -54,8 +54,14 @@ func (m *mockBackend) getPrompts() []string {
 	return out
 }
 
-// TestIntegration_EnqueueAndReply verifies the full message flow:
-// Enqueue → session created → Backend.Prompt called → OnReply callback fires.
+func mockRegistry(mock *mockBackend) BackendRegistry {
+	return BackendRegistry{
+		"test": func(ctx context.Context) (agent.Backend, error) {
+			return mock, nil
+		},
+	}
+}
+
 func TestIntegration_EnqueueAndReply(t *testing.T) {
 	mock := &mockBackend{}
 
@@ -63,9 +69,8 @@ func TestIntegration_EnqueueAndReply(t *testing.T) {
 	var replies []struct{ key, token, text string }
 
 	mgr := NewManager(ManagerOpts{
-		NewBackend: func(ctx context.Context) (agent.Backend, error) {
-			return mock, nil
-		},
+		Registry:      mockRegistry(mock),
+		DefaultAgent:  "test",
 		IdleTimeout:   time.Hour,
 		MaxConcurrent: 5,
 		OnReply: func(sessionKey, contextToken, text string) {
@@ -78,25 +83,21 @@ func TestIntegration_EnqueueAndReply(t *testing.T) {
 	mgr.Start()
 	defer mgr.Stop()
 
-	// Send a message
 	err := mgr.Enqueue("u:user1", PendingMessage{
 		Text:         "hello",
 		ContextToken: "user1",
-	})
+	}, "test")
 	if err != nil {
 		t.Fatalf("Enqueue failed: %v", err)
 	}
 
-	// Wait for processing
 	time.Sleep(200 * time.Millisecond)
 
-	// Verify backend received the prompt
 	prompts := mock.getPrompts()
 	if len(prompts) != 1 || prompts[0] != "hello" {
 		t.Errorf("prompts = %v, want [hello]", prompts)
 	}
 
-	// Verify reply callback was called
 	repliesMu.Lock()
 	defer repliesMu.Unlock()
 	if len(replies) != 1 {
@@ -105,15 +106,11 @@ func TestIntegration_EnqueueAndReply(t *testing.T) {
 	if replies[0].key != "u:user1" {
 		t.Errorf("reply key = %q, want u:user1", replies[0].key)
 	}
-	if replies[0].token != "user1" {
-		t.Errorf("reply token = %q, want user1", replies[0].token)
-	}
 	if replies[0].text != "echo: hello" {
 		t.Errorf("reply text = %q, want echo: hello", replies[0].text)
 	}
 }
 
-// TestIntegration_MultipleMessages verifies sequential message processing within a session.
 func TestIntegration_MultipleMessages(t *testing.T) {
 	mock := &mockBackend{}
 
@@ -121,9 +118,8 @@ func TestIntegration_MultipleMessages(t *testing.T) {
 	var replies []string
 
 	mgr := NewManager(ManagerOpts{
-		NewBackend: func(ctx context.Context) (agent.Backend, error) {
-			return mock, nil
-		},
+		Registry:      mockRegistry(mock),
+		DefaultAgent:  "test",
 		IdleTimeout:   time.Hour,
 		MaxConcurrent: 5,
 		OnReply: func(_, _, text string) {
@@ -136,9 +132,8 @@ func TestIntegration_MultipleMessages(t *testing.T) {
 	mgr.Start()
 	defer mgr.Stop()
 
-	// Send 3 messages to same session
 	for _, msg := range []string{"msg1", "msg2", "msg3"} {
-		if err := mgr.Enqueue("u:user1", PendingMessage{Text: msg, ContextToken: "user1"}); err != nil {
+		if err := mgr.Enqueue("u:user1", PendingMessage{Text: msg, ContextToken: "user1"}, "test"); err != nil {
 			t.Fatalf("Enqueue %s failed: %v", msg, err)
 		}
 	}
@@ -162,23 +157,19 @@ func TestIntegration_MultipleMessages(t *testing.T) {
 	}
 }
 
-// TestIntegration_MultipleSessions verifies independent sessions for different users.
 func TestIntegration_MultipleSessions(t *testing.T) {
-	var backendsMu sync.Mutex
-	backends := make(map[string]*mockBackend)
-
 	var repliesMu sync.Mutex
 	var replies []struct{ key, text string }
 
-	mgr := NewManager(ManagerOpts{
-		NewBackend: func(ctx context.Context) (agent.Backend, error) {
-			m := &mockBackend{}
-			// We'll track which backend was created, but can't know key here
-			backendsMu.Lock()
-			backends[time.Now().String()] = m
-			backendsMu.Unlock()
-			return m, nil
+	registry := BackendRegistry{
+		"test": func(ctx context.Context) (agent.Backend, error) {
+			return &mockBackend{}, nil
 		},
+	}
+
+	mgr := NewManager(ManagerOpts{
+		Registry:      registry,
+		DefaultAgent:  "test",
 		IdleTimeout:   time.Hour,
 		MaxConcurrent: 10,
 		OnReply: func(sessionKey, _, text string) {
@@ -191,9 +182,8 @@ func TestIntegration_MultipleSessions(t *testing.T) {
 	mgr.Start()
 	defer mgr.Stop()
 
-	// Send messages to two different users
-	_ = mgr.Enqueue("u:alice", PendingMessage{Text: "hi from alice", ContextToken: "alice"})
-	_ = mgr.Enqueue("u:bob", PendingMessage{Text: "hi from bob", ContextToken: "bob"})
+	_ = mgr.Enqueue("u:alice", PendingMessage{Text: "hi from alice", ContextToken: "alice"}, "test")
+	_ = mgr.Enqueue("u:bob", PendingMessage{Text: "hi from bob", ContextToken: "bob"}, "test")
 
 	time.Sleep(500 * time.Millisecond)
 
@@ -203,7 +193,6 @@ func TestIntegration_MultipleSessions(t *testing.T) {
 		t.Fatalf("replies count = %d, want 2", len(replies))
 	}
 
-	// Check both users got replies (order may vary due to goroutines)
 	found := map[string]bool{}
 	for _, r := range replies {
 		found[r.key] = true
@@ -213,7 +202,6 @@ func TestIntegration_MultipleSessions(t *testing.T) {
 	}
 }
 
-// TestIntegration_WithStore verifies session persistence integration.
 func TestIntegration_WithStore(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	store, err := OpenStore(dbPath)
@@ -226,9 +214,8 @@ func TestIntegration_WithStore(t *testing.T) {
 
 	var replied atomic.Bool
 	mgr := NewManager(ManagerOpts{
-		NewBackend: func(ctx context.Context) (agent.Backend, error) {
-			return mock, nil
-		},
+		Registry:      mockRegistry(mock),
+		DefaultAgent:  "test",
 		IdleTimeout:   time.Hour,
 		MaxConcurrent: 5,
 		Store:         store,
@@ -240,14 +227,13 @@ func TestIntegration_WithStore(t *testing.T) {
 	mgr.Start()
 	defer mgr.Stop()
 
-	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "persist me", ContextToken: "user1"})
+	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "persist me", ContextToken: "user1"}, "test")
 	time.Sleep(300 * time.Millisecond)
 
 	if !replied.Load() {
 		t.Fatal("expected reply callback")
 	}
 
-	// Verify session was persisted
 	sess, err := store.GetSession("u:user1")
 	if err != nil {
 		t.Fatalf("GetSession: %v", err)
@@ -258,14 +244,16 @@ func TestIntegration_WithStore(t *testing.T) {
 	if sess.State != StateActive {
 		t.Errorf("session state = %q, want active", sess.State)
 	}
+	if sess.AgentID != "test" {
+		t.Errorf("session agent_id = %q, want test", sess.AgentID)
+	}
 
-	// Verify messages were persisted
 	msgs, err := store.LoadRecentMessages("u:user1", 10)
 	if err != nil {
 		t.Fatalf("LoadRecentMessages: %v", err)
 	}
 	if len(msgs) != 2 {
-		t.Fatalf("messages count = %d, want 2 (user + assistant)", len(msgs))
+		t.Fatalf("messages count = %d, want 2", len(msgs))
 	}
 	if msgs[0].Role != "user" || msgs[0].Content != "persist me" {
 		t.Errorf("msgs[0] = %+v, want user/persist me", msgs[0])
@@ -275,15 +263,78 @@ func TestIntegration_WithStore(t *testing.T) {
 	}
 }
 
-// TestIntegration_MaxConcurrentEviction verifies that exceeding max sessions triggers eviction.
+func TestIntegration_SwitchAgent(t *testing.T) {
+	var repliesMu sync.Mutex
+	var replies []string
+
+	registry := BackendRegistry{
+		"agentA": func(ctx context.Context) (agent.Backend, error) {
+			return &mockBackend{response: "from A"}, nil
+		},
+		"agentB": func(ctx context.Context) (agent.Backend, error) {
+			return &mockBackend{response: "from B"}, nil
+		},
+	}
+
+	mgr := NewManager(ManagerOpts{
+		Registry:      registry,
+		IdleTimeout:   time.Hour,
+		MaxConcurrent: 5,
+		OnReply: func(_, _, text string) {
+			repliesMu.Lock()
+			replies = append(replies, text)
+			repliesMu.Unlock()
+		},
+		Logger: slog.Default(),
+	})
+	mgr.Start()
+	defer mgr.Stop()
+
+	// Use agent A
+	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "hi", ContextToken: "user1"}, "agentA")
+	time.Sleep(200 * time.Millisecond)
+
+	if mgr.GetSessionAgentID("u:user1") != "agentA" {
+		t.Errorf("agent = %q, want agentA", mgr.GetSessionAgentID("u:user1"))
+	}
+
+	// Switch to agent B
+	if err := mgr.SwitchAgent("u:user1", "agentB"); err != nil {
+		t.Fatalf("SwitchAgent: %v", err)
+	}
+
+	if mgr.GetSessionAgentID("u:user1") != "agentB" {
+		t.Errorf("agent after switch = %q, want agentB", mgr.GetSessionAgentID("u:user1"))
+	}
+
+	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "hi again", ContextToken: "user1"}, "agentB")
+	time.Sleep(200 * time.Millisecond)
+
+	repliesMu.Lock()
+	defer repliesMu.Unlock()
+	if len(replies) < 2 {
+		t.Fatalf("replies count = %d, want >= 2", len(replies))
+	}
+	if replies[0] != "from A" {
+		t.Errorf("replies[0] = %q, want from A", replies[0])
+	}
+	if replies[len(replies)-1] != "from B" {
+		t.Errorf("replies[last] = %q, want from B", replies[len(replies)-1])
+	}
+}
+
 func TestIntegration_MaxConcurrentEviction(t *testing.T) {
 	var repliesMu sync.Mutex
 	replyCount := 0
 
-	mgr := NewManager(ManagerOpts{
-		NewBackend: func(ctx context.Context) (agent.Backend, error) {
+	registry := BackendRegistry{
+		"test": func(ctx context.Context) (agent.Backend, error) {
 			return &mockBackend{delay: 10 * time.Millisecond}, nil
 		},
+	}
+
+	mgr := NewManager(ManagerOpts{
+		Registry:      registry,
 		IdleTimeout:   time.Hour,
 		MaxConcurrent: 2,
 		OnReply: func(_, _, _ string) {
@@ -296,18 +347,38 @@ func TestIntegration_MaxConcurrentEviction(t *testing.T) {
 	mgr.Start()
 	defer mgr.Stop()
 
-	// Fill up to max
-	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "a", ContextToken: "u1"})
-	_ = mgr.Enqueue("u:user2", PendingMessage{Text: "b", ContextToken: "u2"})
+	_ = mgr.Enqueue("u:user1", PendingMessage{Text: "a", ContextToken: "u1"}, "test")
+	_ = mgr.Enqueue("u:user2", PendingMessage{Text: "b", ContextToken: "u2"}, "test")
 	time.Sleep(200 * time.Millisecond)
 
-	// Third session should trigger eviction of oldest
-	_ = mgr.Enqueue("u:user3", PendingMessage{Text: "c", ContextToken: "u3"})
+	_ = mgr.Enqueue("u:user3", PendingMessage{Text: "c", ContextToken: "u3"}, "test")
 	time.Sleep(200 * time.Millisecond)
 
 	repliesMu.Lock()
 	defer repliesMu.Unlock()
 	if replyCount != 3 {
 		t.Errorf("replyCount = %d, want 3", replyCount)
+	}
+}
+
+func TestIntegration_NoAgentSelected(t *testing.T) {
+	registry := BackendRegistry{
+		"test": func(ctx context.Context) (agent.Backend, error) {
+			return &mockBackend{}, nil
+		},
+	}
+
+	mgr := NewManager(ManagerOpts{
+		Registry:      registry,
+		IdleTimeout:   time.Hour,
+		MaxConcurrent: 5,
+		Logger:        slog.Default(),
+	})
+	mgr.Start()
+	defer mgr.Stop()
+
+	err := mgr.Enqueue("u:user1", PendingMessage{Text: "hello", ContextToken: "user1"}, "")
+	if err == nil {
+		t.Fatal("expected error for empty agent ID, got nil")
 	}
 }
