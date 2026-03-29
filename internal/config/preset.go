@@ -41,6 +41,7 @@ var BuiltInAgents = map[string]AgentPreset{
 		Label:       "OpenCode",
 		Description: "Open-source coding agent",
 		Command:     "opencode",
+		Args:        []string{"run"},
 	},
 }
 
