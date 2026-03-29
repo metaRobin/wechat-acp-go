@@ -42,8 +42,9 @@ type BackendRegistry map[string]BackendFactory
 type ManagerOpts struct {
 	Registry      BackendRegistry
 	DefaultAgent  string // optional: auto-use this agent if set
-	HistoryLimit  int    // max messages to restore (default 20)
-	IdleTimeout   time.Duration
+	HistoryLimit    int // max messages to restore (default 20)
+	StreamThreshold int // chars before streaming flush (default 500, 0=disable)
+	IdleTimeout     time.Duration
 	MaxConcurrent int
 
 	// Callbacks
@@ -262,7 +263,16 @@ func (m *Manager) processMessage(sess *UserSession, msg PendingMessage) {
 		}
 	}
 
+	// Create stream buffer for real-time reply sending
+	sendFn := func(text string) {
+		if m.opts.OnReply != nil {
+			m.opts.OnReply(sess.Key, msg.ContextToken, text)
+		}
+	}
+	buf := NewStreamBuffer(m.opts.StreamThreshold, sendFn)
+
 	result, err := sess.Backend.Prompt(sess.ctx, promptText, func(chunk string) {
+		buf.Write(chunk)
 		if m.opts.SendTyping != nil {
 			m.opts.SendTyping(sess.Key, msg.ContextToken)
 		}
@@ -279,22 +289,23 @@ func (m *Manager) processMessage(sess *UserSession, msg PendingMessage) {
 		return
 	}
 
-	replyText := result.Text
-	if result.StopReason == "cancelled" {
-		replyText += "\n[cancelled]"
-	} else if result.StopReason == "refusal" {
-		replyText += "\n[agent refused to continue]"
-	}
+	// Flush remaining buffered text
+	buf.Flush()
 
-	if strings.TrimSpace(replyText) != "" && m.opts.OnReply != nil {
-		m.opts.OnReply(sess.Key, msg.ContextToken, replyText)
+	// Append stop reason if needed
+	if result.StopReason == "cancelled" && m.opts.OnReply != nil {
+		m.opts.OnReply(sess.Key, msg.ContextToken, "[cancelled]")
+	} else if result.StopReason == "refusal" && m.opts.OnReply != nil {
+		m.opts.OnReply(sess.Key, msg.ContextToken, "[agent refused to continue]")
 	}
 
 	sess.lastActivity.Store(time.Now().UnixMilli())
 
+	// Persist full reply text
+	replyText := buf.AllText()
 	if m.opts.Store != nil {
 		_ = m.opts.Store.AppendMessage(sess.Key, "user", msg.Text)
-		if strings.TrimSpace(replyText) != "" {
+		if replyText != "" {
 			_ = m.opts.Store.AppendMessage(sess.Key, "assistant", replyText)
 		}
 		_ = m.opts.Store.UpdateActivity(sess.Key)

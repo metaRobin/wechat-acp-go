@@ -88,8 +88,9 @@ func (b *Bridge) Run(ctx context.Context, forceLogin bool) error {
 	b.mgr = session.NewManager(session.ManagerOpts{
 		Registry:      registry,
 		DefaultAgent:  b.defaultAgent,
-		HistoryLimit:  b.cfg.Session.HistoryLimit,
-		IdleTimeout:   b.cfg.Session.IdleTimeout.Duration,
+		HistoryLimit:    b.cfg.Session.HistoryLimit,
+		StreamThreshold: 500,
+		IdleTimeout:     b.cfg.Session.IdleTimeout.Duration,
 		MaxConcurrent: b.cfg.Session.MaxConcurrent,
 		OnReply:       b.sendReply,
 		SendTyping:    b.sendTyping,
