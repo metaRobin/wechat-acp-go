@@ -8,6 +8,7 @@ import (
 
 	wechatbot "github.com/corespeed-io/wechatbot/golang"
 
+	"github.com/metaRobin/wechat-router-go/internal/adapter"
 	"github.com/metaRobin/wechat-router-go/internal/config"
 	"github.com/metaRobin/wechat-router-go/internal/session"
 )
@@ -19,17 +20,19 @@ type Router struct {
 	mgr          *session.Manager
 	bot          *wechatbot.Bot
 	customAgents map[string]config.AgentPreset
+	mediaDir     string // directory for saving downloaded media
 	logger       *slog.Logger
 }
 
 // NewRouter creates a router for the given bot configuration.
-func NewRouter(botName string, group config.GroupConfig, mgr *session.Manager, bot *wechatbot.Bot, customAgents map[string]config.AgentPreset, logger *slog.Logger) *Router {
+func NewRouter(botName string, group config.GroupConfig, mgr *session.Manager, bot *wechatbot.Bot, customAgents map[string]config.AgentPreset, mediaDir string, logger *slog.Logger) *Router {
 	return &Router{
 		botName:      botName,
 		group:        group,
 		mgr:          mgr,
 		bot:          bot,
 		customAgents: customAgents,
+		mediaDir:     mediaDir,
 		logger:       logger,
 	}
 }
@@ -41,11 +44,8 @@ func (r *Router) Route(msg *wechatbot.IncomingMessage) {
 	replyTarget := r.replyTarget(msg, isGroup)
 
 	text := msg.Text
-	if text == "" {
-		text = "[empty message]"
-	}
 
-	// Check for commands first
+	// Check for commands first (only on text messages)
 	if cmd := ParseCommand(text); cmd != nil {
 		r.handleCommand(cmd, sessionKey, replyTarget)
 		return
@@ -68,13 +68,66 @@ func (r *Router) Route(msg *wechatbot.IncomingMessage) {
 		return
 	}
 
+	// Build prompt text with media info if present
+	promptText := r.buildPromptText(msg, sessionKey)
+
 	err := r.mgr.Enqueue(sessionKey, session.PendingMessage{
-		Text:         text,
+		Text:         promptText,
 		ContextToken: replyTarget,
 	}, agentID)
 	if err != nil {
 		r.logger.Error("enqueue_failed", "key", sessionKey, "error", err)
 	}
+}
+
+func (r *Router) buildPromptText(msg *wechatbot.IncomingMessage, sessionKey string) string {
+	var parts []string
+
+	// Text content
+	if msg.Text != "" {
+		parts = append(parts, msg.Text)
+	}
+
+	// Try to download and save media
+	if r.mediaDir != "" && r.bot != nil && hasMedia(msg) {
+		result, err := adapter.DownloadAndSave(context.Background(), msg, r.bot, r.mediaDir, sessionKey)
+		if err != nil {
+			r.logger.Debug("media_download_failed", "error", err)
+			switch msg.Type {
+			case wechatbot.ContentImage:
+				parts = append(parts, "[用户发送了图片，下载失败]")
+			case wechatbot.ContentFile:
+				name := "file"
+				if len(msg.Files) > 0 {
+					name = msg.Files[0].FileName
+				}
+				parts = append(parts, fmt.Sprintf("[用户发送了文件: %s，下载失败]", name))
+			}
+		} else if result != nil {
+			switch result.Type {
+			case "image":
+				parts = append(parts, fmt.Sprintf("[用户发送了图片, 已保存到: %s]", result.Path))
+			default:
+				parts = append(parts, fmt.Sprintf("[用户发送了文件: %s, 已保存到: %s]", result.FileName, result.Path))
+			}
+		}
+	} else if hasMedia(msg) {
+		// No mediaDir configured, fall back to description
+		parts = append(parts, adapter.IncomingToText(msg, false, ""))
+		return strings.Join(parts, "\n")
+	}
+
+	if len(parts) == 0 {
+		return "[empty message]"
+	}
+	return strings.Join(parts, "\n")
+}
+
+func hasMedia(msg *wechatbot.IncomingMessage) bool {
+	return msg.Type == wechatbot.ContentImage ||
+		msg.Type == wechatbot.ContentFile ||
+		msg.Type == wechatbot.ContentVideo ||
+		msg.Type == wechatbot.ContentVoice
 }
 
 func (r *Router) handleCommand(cmd *Command, sessionKey, replyTarget string) {

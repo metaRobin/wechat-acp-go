@@ -90,16 +90,18 @@ func (b *Bridge) Run(ctx context.Context, forceLogin bool) error {
 		DefaultAgent:  b.defaultAgent,
 		HistoryLimit:    b.cfg.Session.HistoryLimit,
 		StreamThreshold: 500,
+		MediaDir:        filepath.Join(b.storageDir, "media"),
 		IdleTimeout:     b.cfg.Session.IdleTimeout.Duration,
-		MaxConcurrent: b.cfg.Session.MaxConcurrent,
-		OnReply:       b.sendReply,
-		SendTyping:    b.sendTyping,
-		Store:         store,
-		Logger:        b.logger,
+		MaxConcurrent:   b.cfg.Session.MaxConcurrent,
+		OnReply:         b.sendReply,
+		SendTyping:      b.sendTyping,
+		Store:           store,
+		Logger:          b.logger,
 	})
 	b.mgr.Start()
 
-	r := router.NewRouter(b.cfg.Name, b.cfg.Group, b.mgr, b.bot, b.customAgents, b.logger)
+	mediaDir := filepath.Join(b.storageDir, "media")
+	r := router.NewRouter(b.cfg.Name, b.cfg.Group, b.mgr, b.bot, b.customAgents, mediaDir, b.logger)
 	b.bot.OnMessage(r.Route)
 
 	b.logger.Info("bridge_running", "bot", b.cfg.Name, "agents", len(registry))
@@ -190,17 +192,34 @@ func (b *Bridge) Stop() {
 }
 
 // sendReply formats and sends agent reply text back to WeChat.
+// Extracts long code blocks (>50 lines) and sends them as files.
 func (b *Bridge) sendReply(sessionKey, contextToken, text string) {
-	formatted := adapter.FormatForWeChat(text)
-	if formatted == "" {
+	// Extract long code blocks as files
+	cleaned, codeBlocks := adapter.ExtractLongCodeBlocks(text, 50)
+
+	formatted := adapter.FormatForWeChat(cleaned)
+	if formatted == "" && len(codeBlocks) == 0 {
 		return
 	}
-	segments := adapter.SplitText(formatted, 4000)
-	for _, seg := range segments {
-		if err := b.bot.Send(context.Background(), contextToken, seg); err != nil {
-			b.logger.Error("send_failed", "target", contextToken, "error", err)
+
+	// Send text segments
+	if formatted != "" {
+		segments := adapter.SplitText(formatted, 4000)
+		for _, seg := range segments {
+			if err := b.bot.Send(context.Background(), contextToken, seg); err != nil {
+				b.logger.Error("send_failed", "target", contextToken, "error", err)
+			}
 		}
 	}
+
+	// Send extracted code blocks as files
+	for _, cb := range codeBlocks {
+		content := wechatbot.SendFile([]byte(cb.Content), cb.FileName)
+		if err := b.bot.SendMedia(context.Background(), contextToken, content); err != nil {
+			b.logger.Error("send_code_file_failed", "file", cb.FileName, "error", err)
+		}
+	}
+
 	_ = b.bot.StopTyping(context.Background(), contextToken)
 }
 

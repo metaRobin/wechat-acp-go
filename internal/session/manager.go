@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/metaRobin/wechat-router-go/internal/adapter"
 	"github.com/metaRobin/wechat-router-go/internal/agent"
 )
 
@@ -43,7 +44,8 @@ type ManagerOpts struct {
 	Registry      BackendRegistry
 	DefaultAgent  string // optional: auto-use this agent if set
 	HistoryLimit    int // max messages to restore (default 20)
-	StreamThreshold int // chars before streaming flush (default 500, 0=disable)
+	StreamThreshold int    // chars before streaming flush (default 500, 0=disable)
+	MediaDir        string // directory for saving media files
 	IdleTimeout     time.Duration
 	MaxConcurrent int
 
@@ -348,6 +350,9 @@ func (m *Manager) cleanupIdleSessions() {
 			if m.opts.Store != nil {
 				_ = m.opts.Store.UpdateState(key, StateSuspended)
 			}
+			if m.opts.MediaDir != "" {
+				adapter.CleanupMedia(m.opts.MediaDir, key)
+			}
 		}
 	}
 }
@@ -399,7 +404,7 @@ func (m *Manager) formatHistory(sessionKey string) string {
 	return sb.String()
 }
 
-// RemoveSession kills the backend, removes the session, and deletes its messages from store.
+// RemoveSession kills the backend, removes the session, and deletes its messages and media from store.
 func (m *Manager) RemoveSession(sessionKey string) {
 	m.mu.Lock()
 	if sess, ok := m.sessions[sessionKey]; ok {
@@ -413,5 +418,10 @@ func (m *Manager) RemoveSession(sessionKey string) {
 
 	if m.opts.Store != nil {
 		_ = m.opts.Store.DeleteMessages(sessionKey)
+	}
+
+	// Clean up media files
+	if m.opts.MediaDir != "" {
+		adapter.CleanupMedia(m.opts.MediaDir, sessionKey)
 	}
 }

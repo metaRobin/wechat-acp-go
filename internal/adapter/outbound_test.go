@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -254,5 +255,84 @@ func TestSplitText_PreferNewlineBreak(t *testing.T) {
 
 	if len(segments) < 2 {
 		t.Fatalf("expected at least 2 segments, got %d", len(segments))
+	}
+}
+
+// --- Code block extraction tests ---
+
+func TestExtractLongCodeBlocks_LongBlock(t *testing.T) {
+	// Create a code block with 60 lines
+	var lines []string
+	for i := 0; i < 60; i++ {
+		lines = append(lines, "print('hello')")
+	}
+	code := strings.Join(lines, "\n")
+	text := "Here is code:\n```python\n" + code + "\n```\nDone."
+
+	result, blocks := ExtractLongCodeBlocks(text, 50)
+
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block extracted, got %d", len(blocks))
+	}
+	if blocks[0].Language != "python" {
+		t.Errorf("language = %q, want python", blocks[0].Language)
+	}
+	if blocks[0].FileName != "code_1.py" {
+		t.Errorf("fileName = %q, want code_1.py", blocks[0].FileName)
+	}
+	if !strings.Contains(result, "[代码已作为文件发送: code_1.py]") {
+		t.Errorf("expected placeholder in result, got: %s", result[:min(len(result), 100)])
+	}
+	if strings.Contains(result, "print('hello')") {
+		t.Error("code should be removed from result text")
+	}
+}
+
+func TestExtractLongCodeBlocks_ShortBlock(t *testing.T) {
+	text := "```go\nfmt.Println(\"hi\")\n```"
+	result, blocks := ExtractLongCodeBlocks(text, 50)
+
+	if len(blocks) != 0 {
+		t.Errorf("expected 0 blocks for short code, got %d", len(blocks))
+	}
+	if result != text {
+		t.Errorf("short code should be unchanged")
+	}
+}
+
+func TestLangToExt(t *testing.T) {
+	tests := map[string]string{
+		"python":     ".py",
+		"go":         ".go",
+		"javascript": ".js",
+		"typescript":  ".ts",
+		"rust":       ".rs",
+		"bash":       ".sh",
+		"":           ".txt",
+		"unknown":    ".txt",
+	}
+	for lang, want := range tests {
+		got := LangToExt(lang)
+		if got != want {
+			t.Errorf("LangToExt(%q) = %q, want %q", lang, got, want)
+		}
+	}
+}
+
+func TestCleanupMedia(t *testing.T) {
+	dir := t.TempDir()
+	// Create a session media directory with a file
+	sessionDir := dir + "/test-session"
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sessionDir+"/test.jpg", []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	CleanupMedia(dir, "test-session")
+
+	if _, err := os.Stat(sessionDir); !os.IsNotExist(err) {
+		t.Error("expected session media dir to be deleted")
 	}
 }
